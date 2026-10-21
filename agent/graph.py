@@ -22,12 +22,14 @@ from langsmith import traceable
 from pydantic import ValidationError
 
 from .deps import SupervisorDeps
-from .contracts import (DraftReport, EvidenceRecord, PendingClarification, ResponseState,
-                        RunbookEvidence, TargetResolution, ValidationIssue, ValidationResult)
+from .contracts import (ConversationContext, DraftReport, EvidenceRecord, ResponseState,
+                        RunbookEvidence, RunbookSearchResult, TargetResolution, ValidationIssue, ValidationResult)
 from .grounding import (MAX_DRAFT_ATTEMPTS, prepare_report, render_report, validate_report)
 from .retry import with_retry
+from .runbook_search import build_service_query, document_hash
+from .context import interpret_query
 from .targets import (
-    RegistryError, clarification_question, is_operational_request, normalize_plan,
+    RegistryError, is_operational_request, normalize_plan,
     resolve_targets,
 )
 
@@ -65,6 +67,11 @@ class AgentState(TypedDict, total=False):
     evidence: list[dict]
     monitoring_repair_rounds: int
     monitoring_coverage: dict
+    runbook_searches: list[dict]
+    runbook_coverage: dict
+    conversation_context: dict
+    context_resolution: dict
+    effective_query: str
 
 
 def _cost(state: AgentState, usage: dict) -> float:
@@ -82,6 +89,8 @@ async def route_node(state: AgentState, deps: SupervisorDeps) -> dict:
         events.append({"type": "RouteFallback", "reason": type(exc).__name__})
     result = result if isinstance(result, dict) else {}
     route = "incident" if is_operational_request(state["query"]) else result.get("route", "chat")
+    if state.get("context_resolution", {}).get("force_incident"):
+        route = "incident"
     route = route if route in ("chat", "incident") else "chat"
     event = {"type": "RouteDecided", "route": route}
     return {"route": route, "needs_analysis": result.get("needs_analysis") is True,
@@ -91,23 +100,30 @@ async def route_node(state: AgentState, deps: SupervisorDeps) -> dict:
 
 @traceable(name="resolve_targets_node")
 async def resolve_targets_node(state: AgentState, deps: SupervisorDeps) -> dict:
-    try:
-        resolution = resolve_targets(state["query"])
-        error = None
-    except RegistryError as exc:
-        resolution, error = TargetResolution(), str(exc)
-    question = None if error else clarification_question(resolution)
-    pending = None
-    if question:
-        pending = PendingClarification(
-            original_query=state["query"], question=question,
-            reason="unknown_target" if resolution.unresolved_targets else "missing_target",
-        ).model_dump(mode="json")
+    decision = state["context_resolution"]
+    resolution = TargetResolution.model_validate(decision["target_resolution"])
+    error = state.get("target_error")
+    question = decision.get("clarification_question") if not error else None
+    pending = decision.get("pending_clarification")
     return {"target_resolution": resolution.model_dump(mode="json"),
             "target_error": error, "clarification_question": question,
             "pending_clarification": pending,
             "events": state["events"] + [{"type": "TargetsResolved",
                 **resolution.model_dump(mode="json"), "error": error}]}
+
+
+async def context_node(state: AgentState, deps: SupervisorDeps) -> dict:
+    context = ConversationContext.model_validate(state.get("conversation_context") or {
+        "thread_id": state.get("thread_id", "default")})
+    try:
+        decision = interpret_query(state["query"], context, resolver=resolve_targets)
+        error = None
+    except RegistryError as exc:
+        error = str(exc)
+        decision = {"mode": "registry_error", "force_incident": False,
+                    "target_resolution": TargetResolution().model_dump(mode="json"), "effective_query": state["query"]}
+    return {"context_resolution": decision, "effective_query": decision["effective_query"], "target_error": error,
+            "events": state.get("events", []) + [{"type": "ContextResolved", "mode": decision["mode"]}]}
 
 
 @traceable(name="clarify_target_node")
@@ -153,10 +169,10 @@ async def plan_node(state: AgentState, deps: SupervisorDeps) -> dict:
         prompt_server = await deps.mcp.find_prompt("incident_analysis_prompt")
         procedure = await deps.mcp.get_prompt(
             "incident_analysis_prompt",
-            {"system_name": ", ".join(resolution.resolved_targets), "symptom": state["query"]},
+            {"system_name": ", ".join(resolution.resolved_targets), "symptom": state.get("effective_query", state["query"])},
             server=prompt_server,
         )
-        raw, usage = deps.fast_llm.plan(state["query"], procedure)
+        raw, usage = deps.fast_llm.plan(state.get("effective_query", state["query"]), procedure, resolution=resolution)
     except Exception as exc:
         raw, usage = {}, {"usd": 0.0}
         events.append({"type": "PlanFallback", "reason": type(exc).__name__})
@@ -218,6 +234,8 @@ async def research_node(state: AgentState, deps: SupervisorDeps) -> dict:
         task = tasks[index]
         source = "monitoring" if task["kind"] == "monitoring" else "runbook"
         reference = "get_monitoring_status" if source == "monitoring" else "get_incident_runbook"
+        if task.get("retrieval"):
+            reference = task["retrieval"]["candidate"]["reference"]
         data, retries, attempts = None, 0, 0
         status, reason = "ok", None
         try:
@@ -236,10 +254,14 @@ async def research_node(state: AgentState, deps: SupervisorDeps) -> dict:
                 if discovery_error:
                     raise RuntimeError("런북 제공 서버를 찾지 못했습니다")
                 uri = runbook_template.format(incident_type=task["target"])
+                if task.get("retrieval") and uri != task["retrieval"]["candidate"]["reference"]:
+                    raise ValueError("검색 후보와 원문 템플릿 URI 불일치")
                 reference = uri
                 data = await deps.mcp.read_resource(uri, server=runbook_server)
                 if not isinstance(data, str) or not data.strip() or data.startswith("# Runbook Not Found"):
                     status, reason = "unknown", "대응 런북 원문을 확보하지 못했습니다"
+                elif task.get("retrieval") and document_hash(data) != task["retrieval"]["candidate"]["document_sha256"]:
+                    status, reason = "error", "검색 인덱스와 조회 원문이 변경되어 일치하지 않습니다"
         except Exception as exc:
             status, reason = "error", f"자료 수집 실패 ({type(exc).__name__})"
             retries = max(0, attempts - 1)
@@ -278,6 +300,7 @@ async def research_node(state: AgentState, deps: SupervisorDeps) -> dict:
                 observed_at=datetime.now(timezone.utc), status=result["status"],
                 raw_data=result["data"] if isinstance(result["data"], str) else None,
                 reason=result["reason"], applicable_targets=task.get("applicable_targets", ()),
+                retrieval=task.get("retrieval"),
             )
             evidence.append(item.model_dump(mode="json"))
         task["status"] = "done" if result["status"] == "ok" else "failed"
@@ -294,31 +317,61 @@ async def research_node(state: AgentState, deps: SupervisorDeps) -> dict:
             "parallel_elapsed": round(time.perf_counter() - started, 2), "events": events}
 
 
-# 수집된 모니터링 결과(상태·알림 문구)를 보고 어떤 runbook이 맞는지 고른다. LLM에게
-# 다시 묻는 대신 코드 레벨 규칙으로 판단한다 — gate(Wave 6)·replan(Wave 7)과 같은 설계
-# 원칙: 모델의 판단을 그대로 믿지 않고, 실측 데이터로 검증 가능한 결정은 코드가 내린다.
-_INCIDENT_TYPE_RULES = [
-    ("latency", "high-latency"),
-    ("pool", "high-latency"),
-    ("cpu", "cpu-spike"),
-    ("memory", "memory-leak"),
-    ("heap", "memory-leak"),
-    ("timeout", "network-timeout"),
-    ("network", "network-timeout"),
-    ("disk", "disk-full"),
-    ("down", "db-down"),
-]
+async def _search_per_service(state, deps):
+    """정상 수집된 서비스마다 한 번 검색한다. 검색 실패는 다른 서비스와 격리한다."""
+    latest = {e["target"]: e for e in state.get("evidence", [])
+              if e["source_type"] == "monitoring" and e["status"] == "ok"}
+    tasks, searches = [], []
+    tool_server, discovery_error = None, None
+    for target in state["target_resolution"]["resolved_targets"]:
+        source = latest.get(target)
+        if source is None:
+            continue
+        query = build_service_query(target, source["raw_data"])
+        record = {"target": target, "monitoring_source_id": source["source_id"], "query": query}
+        if query is None:
+            searches.append({**record, "status": "not_needed", "reason": "정상 상태이며 활성 알림 없음"})
+            continue
+        try:
+            if tool_server is None and discovery_error is None:
+                try:
+                    tool_server = await deps.mcp.find_tool("search_runbooks")
+                except Exception as exc:
+                    discovery_error = type(exc).__name__
+            if discovery_error:
+                raise ValueError("런북 검색 도구를 찾지 못했습니다")
+            raw = await deps.mcp.call_tool("search_runbooks", {"query": query, "top_k": 2}, server=tool_server)
+            if raw.get("status") == "error":
+                searches.append({**record, "status": "error", "reason": raw.get("reason", "검색 오류")})
+                continue
+            found = RunbookSearchResult.model_validate(raw)
+            if found.query != query:
+                raise ValueError("검색 질문 불일치")
+            searches.append({**found.model_dump(mode="json"), **record})
+            for candidate in found.candidates:
+                if candidate.document_id not in found.selected_ids:
+                    continue
+                tasks.append({"id": f"runbook-{target}-{candidate.document_id}", "agent": "research",
+                    "kind": "runbook", "target": candidate.document_id, "status": "pending",
+                    "applicable_targets": [target], "retrieval": {"target": target,
+                        "monitoring_source_id": source["source_id"], "query": query,
+                        "embedding_model": found.embedding_model, "candidate": candidate.model_dump(mode="json")}})
+        except Exception as exc:
+            searches.append({**record, "status": "error", "reason": f"런북 검색 실패 ({type(exc).__name__})"})
+    return tasks, searches
 
 
-def _classify_incident_type(collected: list[dict]) -> str:
-    text = " ".join(
-        f"{c['data'].get('status', '')} " + " ".join(c["data"].get("alerts", []))
-        for c in collected if c.get("source") == "monitoring"
-    ).lower()
-    for keyword, incident_type in _INCIDENT_TYPE_RULES:
-        if keyword in text:
-            return incident_type
-    return "db-down"   # 매칭되는 증상이 없으면 가장 일반적인 장애 대응 절차로 폴백
+def _runbook_coverage(state, searches):
+    fetched = {}
+    for e in state.get("evidence", []):
+        if e["source_type"] == "runbook" and e["status"] == "ok":
+            for target in e.get("applicable_targets", []):
+                fetched.setdefault(target, []).append(e["reference"])
+    return {"services": [{"target": s["target"], "search_status": s["status"],
+              "status": "not_needed" if s["status"] == "not_needed" else (
+                  "fetched" if s.get("selected_ids") and len(fetched.get(s["target"], [])) == len(s["selected_ids"]) else
+                  (s["status"] if s["status"] in ("error", "no_match") else "fetch_failed")),
+              "references": fetched.get(s["target"], [])} for s in searches]}
 
 
 @traceable(name="replan_check_node")
@@ -340,20 +393,23 @@ async def replan_check_node(state: AgentState, deps: SupervisorDeps) -> dict:
                        "reason": "monitoring_missing", "missing_targets": missing})
         return {"tasks": tasks, "monitoring_repair_rounds": repair_rounds + 1,
                 "monitoring_coverage": coverage, "events": events}
-    has_runbook = any(item["source"] == "runbook" for item in collected)
     rounds = state.get("replan_rounds", 0)
-    if observed and not has_runbook and rounds < 1:
-        incident_type = _classify_incident_type(collected)
-        task = {"id": "task-gap-runbook", "agent": "research", "kind": "runbook",
-                "target": incident_type, "status": "pending"}
-        events.append({"type": "ReplanCheck", "round": rounds, "is_sufficient": False,
-                       "needs_research": True, "reason": "runbook_missing", "target": incident_type})
-        return {"tasks": state["tasks"] + [task], "replan_rounds": rounds + 1,
-                "monitoring_coverage": coverage, "events": events}
+    searches = state.get("runbook_searches", [])
+    if observed and rounds < 1:
+        tasks, searches = await _search_per_service(state, deps)
+        events.extend({"type": "RunbookSearchCompleted", **s} for s in searches)
+        if tasks:
+            events.append({"type": "ReplanCheck", "round": rounds, "is_sufficient": False,
+                           "needs_research": True, "reason": "runbook_search", "task_count": len(tasks)})
+            return {"tasks": state["tasks"] + tasks, "replan_rounds": rounds + 1,
+                    "runbook_searches": searches, "monitoring_coverage": coverage, "events": events}
+    runbook_coverage = _runbook_coverage(state, searches)
+    complete = all(s["status"] in ("fetched", "not_needed") for s in runbook_coverage["services"])
     events.extend([{"type": "MonitoringCoverage", **coverage},
-                   {"type": "ReplanCheck", "is_sufficient": not missing and has_runbook,
+                   {"type": "ReplanCheck", "is_sufficient": not missing and complete,
                     "needs_research": False, "reason": "finished"}])
-    return {"monitoring_coverage": coverage, "events": events}
+    return {"monitoring_coverage": coverage, "runbook_searches": searches, "replan_rounds": max(rounds, 1),
+            "runbook_coverage": runbook_coverage, "events": events}
 
 
 @traceable(name="analysis_node")
@@ -387,7 +443,7 @@ async def write_node(state: AgentState, deps: SupervisorDeps) -> dict:
     usage = {"usd": 0.0}
     candidate, error = None, None
     try:
-        query = state["query"]
+        query = state.get("effective_query", state["query"])
         if state.get("analysis_text"):
             query += "\n미검증 모델 분석 (관측 사실이 아님): " + state["analysis_text"]
         raw, usage = await deps.quality_llm.write(
@@ -427,8 +483,9 @@ async def validate_node(state: AgentState, deps: SupervisorDeps) -> dict:
 async def finalize_node(state: AgentState, deps: SupervisorDeps) -> dict:
     resolution = TargetResolution.model_validate(state["target_resolution"])
     coverage = state["monitoring_coverage"]
+    runbooks = state.get("runbook_coverage", {}).get("services", [])
     partial = bool(resolution.unresolved_targets or coverage["missing_targets"]
-                   or not any(c["source"] == "runbook" for c in state.get("collected", [])))
+                   or any(s["status"] not in ("fetched", "not_needed") for s in runbooks))
     validation = ValidationResult.model_validate(state["validation_result"])
     status = "validation_failed" if validation.status == "failed" else ("partial" if partial else "completed")
     response = ResponseState(status=status, validation=validation,
@@ -442,8 +499,10 @@ async def finalize_node(state: AgentState, deps: SupervisorDeps) -> dict:
         lines.append("모니터링 미수집: " + ", ".join(coverage["missing_targets"]))
     if resolution.unresolved_targets:
         lines.append("미확인 서비스: " + ", ".join(resolution.unresolved_targets))
-    if not any(c["source"] == "runbook" for c in state.get("collected", [])):
-        lines.append("대응 런북: 확보하지 못함")
+    labels = {"fetched": "원문 확보", "not_needed": "정상·무알림으로 검색 생략",
+              "no_match": "관련 문서 없음", "error": "검색 오류", "fetch_failed": "원문 확보 실패"}
+    for service in runbooks:
+        lines.append(f"대응 런북 ({service['target']}): {labels[service['status']]}")
     if state.get("clarification_question"):
         lines.append(state["clarification_question"])
     return {"final": "\n".join(lines) + "\n\n" + body,
@@ -473,6 +532,7 @@ def _after_validate(state: AgentState) -> str:
 def build_graph(deps: SupervisorDeps):
     g = StateGraph(AgentState)
     node = lambda fn: partial(fn, deps=deps)   # Wave 13 — 명시적 의존성 주입
+    g.add_node("context", node(context_node))
     g.add_node("route", node(route_node))
     g.add_node("chat_answer", node(chat_answer_node))
     g.add_node("resolve_targets", node(resolve_targets_node))
@@ -486,7 +546,8 @@ def build_graph(deps: SupervisorDeps):
     g.add_node("validate", node(validate_node))
     g.add_node("finalize", node(finalize_node))
 
-    g.set_entry_point("route")
+    g.set_entry_point("context")
+    g.add_edge("context", "route")
     g.add_conditional_edges("route", _after_route,
                             {"chat_answer": "chat_answer", "resolve_targets": "resolve_targets"})
     g.add_edge("chat_answer", END)

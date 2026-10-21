@@ -40,6 +40,12 @@ def is_operational_request(query: str) -> bool:
     return bool(_OPERATIONAL.search(query))
 
 
+def has_target_mentions(query: str) -> bool:
+    """모두 제외한 명시적 요청을 '대상 미언급'으로 취급해 문맥을 붙이지 않는다."""
+    known = load_registry()
+    return any(m.group() in known or _SERVICE_ID.search(m.group()) for m in _TOKEN.finditer(query))
+
+
 def resolve_targets(query: str, known_systems: frozenset[str] | None = None) -> TargetResolution:
     known = load_registry() if known_systems is None else known_systems
     mentions = [m for m in _TOKEN.finditer(query)

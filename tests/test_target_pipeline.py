@@ -30,7 +30,7 @@ class TestFastLLM:
     def route(self, query):
         return {"route": "chat", "needs_analysis": False}, {"usd": 0}
 
-    def plan(self, query, procedure):
+    def plan(self, query, procedure, resolution=None):
         self.plan_calls += 1
         return {"needs_analysis": False, "tasks": [
             {"agent": "research", "target": "payments-service"},
@@ -56,7 +56,9 @@ class TestQualityLLM:
 
     async def write(self, query, collected, attempt, feedback, on_token=None):
         self.inputs.append(copy.deepcopy(collected))
-        return {"hypotheses": [], "missing_checks": [], "recommendations": []}, {"usd": 0}
+        citations = [{"source_id": e["source_id"], "step": 1, "target": e["retrieval"]["target"]}
+                     for e in collected if e.get("retrieval") and e["status"] == "ok"]
+        return {"hypotheses": [], "missing_checks": [], "recommendations": citations}, {"usd": 0}
 
 
 class TestMCP:
@@ -73,7 +75,16 @@ class TestMCP:
         self.prompts.append(arguments)
         return "확인된 서비스를 모니터링하고 대응 절차를 조회하세요"
 
-    async def call_tool(self, name, arguments):
+    async def find_tool(self, name):
+        return "ops"
+
+    async def call_tool(self, name, arguments, server=None):
+        if name == "search_runbooks":
+            from agent.runbook_search import document_hash
+            text = "# CPU 대응\n1. 프로세스 사용량 확인\n2. 부하 확인"
+            return {"query": arguments["query"], "status": "matched", "embedding_model": "test-embedding",
+                    "dimensions": 2, "candidates": [{"document_id": "cpu-spike", "reference": "runbook://incident-response/cpu-spike",
+                        "document_sha256": document_hash(text), "score": 0.9}], "selected_ids": ["cpu-spike"]}
         target = arguments["system_name"]
         self.calls.append(target)
         action = self.behavior.get(target)

@@ -8,13 +8,17 @@ FastAPI 백엔드(server.py)가 lifespan에서 이 파일을 subprocess(stdio)�
 - Resource runbook://incident-response/{incident_type} : URI로 식별되는 정적 문서
 - Prompt  incident_analysis_prompt : 여러 Tool을 조합하는 표준 진단 절차를 강제
 """
+import asyncio
 import json
+import os
 import random
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
 from fastmcp import FastMCP
 from pydantic import BaseModel, Field
+from agent.runbook_search import SearchError, search_runbooks as search_local_runbooks
 
 mcp = FastMCP(name="capstone-all-total-ops")
 
@@ -56,10 +60,24 @@ def get_monitoring_status(system_name: str) -> SystemStatus:
 @mcp.resource("runbook://incident-response/{incident_type}")
 def get_incident_runbook(incident_type: str) -> str:
     """특정 incident 유형의 runbook(정적 문서)을 반환합니다."""
+    if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", incident_type):
+        return "# Runbook Not Found\n\nInvalid document ID"
     runbook_path = DATA_DIR / "runbooks" / f"{incident_type}.md"
     if not runbook_path.exists():
         return f"# Runbook Not Found\n\nNo runbook for incident type: {incident_type}"
     return runbook_path.read_text()
+
+
+@mcp.tool()
+async def search_runbooks(query: str, top_k: int = 2) -> dict:
+    """관측 증상의 관련 런북 후보와 선택 결과를 반환한다. 원문 조회는 Resource를 사용한다."""
+    if os.getenv("RUNBOOK_EMBEDDING_BACKEND", os.getenv("LLM_BACKEND", "fake")) != "openai":
+        return {"status": "error", "reason": "OpenAI 런북 검색 백엔드가 설정되지 않았습니다"}
+    try:
+        result = await asyncio.to_thread(search_local_runbooks, query, top_k)
+        return result.model_dump(mode="json")
+    except (SearchError, ValueError) as exc:
+        return {"status": "error", "reason": str(exc)}
 
 
 @mcp.prompt()

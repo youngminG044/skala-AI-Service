@@ -74,7 +74,17 @@ class MCPClient:
             raise asyncio.TimeoutError("simulated transient timeout (Wave 9 demo)")
         async with self._lock:
             result = await self.sessions[server].call_tool(name, arguments)
+        if getattr(result, "isError", getattr(result, "is_error", False)):
+            raise RuntimeError("MCP tool 실행 실패")
         return json.loads(result.content[0].text)
+
+    async def find_tool(self, tool_name: str) -> str:
+        for server_name, session in self.sessions.items():
+            async with self._lock:
+                result = await session.list_tools()
+            if any(tool.name == tool_name for tool in result.tools):
+                return server_name
+        raise ValueError(f"MCP tool not found: {tool_name}")
 
     @traceable(run_type="tool", name="mcp.list_resource_templates")
     async def list_resource_templates(self, server: str) -> list:

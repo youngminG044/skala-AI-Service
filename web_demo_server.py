@@ -46,6 +46,13 @@ async def proxy_chat(req: Request):
     return JSONResponse(r.json(), status_code=r.status_code)
 
 
+@app.get("/sessions/{thread_id}")
+async def proxy_session(thread_id: str):
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.get(f"{BACKEND}/sessions/{thread_id}")
+    return JSONResponse(r.json(), status_code=r.status_code, headers={"Cache-Control": "no-store"})
+
+
 @app.get("/chat/stream")
 async def proxy_stream(message: str, thread_id: str = "web-demo"):
     async def relay():
@@ -62,4 +69,4 @@ async def proxy_stream(message: str, thread_id: str = "web-demo"):
 
 if __name__ == "__main__":
     print("브라우저에서 http://localhost:8600 을 열어보세요 (server.py가 8100에 떠 있어야 합니다)")
-    uvicorn.run(app, host="0.0.0.0", port=8600)
+    uvicorn.run(app, host="127.0.0.1", port=8600)

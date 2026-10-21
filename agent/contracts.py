@@ -120,6 +120,61 @@ class Fact(ContractModel):
     source_id: NonBlankString
 
 
+class RunbookCandidate(ContractModel):
+    document_id: Annotated[str, StringConstraints(strict=True, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")]
+    reference: NonBlankString
+    document_sha256: Annotated[str, StringConstraints(strict=True, pattern=r"^[0-9a-f]{64}$")]
+    score: float = Field(ge=-1, le=1)
+
+    @model_validator(mode="after")
+    def check_reference(self):
+        if self.reference != f"runbook://incident-response/{self.document_id}":
+            raise ValueError("문서 ID와 원문 URI가 일치하지 않습니다")
+        return self
+
+
+class RerankResult(ContractModel):
+    ranked_ids: UniqueStrings = ()
+    model: NonBlankString
+    prompt_tokens: int = Field(ge=0, strict=True)
+    completion_tokens: int = Field(ge=0, strict=True)
+    total_tokens: int = Field(ge=0, strict=True)
+    elapsed_seconds: float = Field(ge=0)
+
+
+class RunbookSearchResult(ContractModel):
+    query: NonBlankString
+    status: Literal["matched", "no_match"]
+    embedding_model: NonBlankString
+    dimensions: int = Field(ge=1, strict=True)
+    candidates: tuple[RunbookCandidate, ...] = ()
+    selected_ids: UniqueStrings = ()
+    embedding_tokens: int = Field(default=0, ge=0, strict=True)
+    elapsed_seconds: float = Field(default=0, ge=0)
+    reranking: RerankResult | None = None
+
+    @model_validator(mode="after")
+    def check_selection(self):
+        ids = [c.document_id for c in self.candidates]
+        if len(ids) != len(set(ids)) or len(ids) > 2:
+            raise ValueError("검색 후보는 중복 없는 최대 두 문서입니다")
+        if not set(self.selected_ids) <= set(ids):
+            raise ValueError("선택한 문서는 검색 후보에 있어야 합니다")
+        if (self.status == "matched") != bool(self.selected_ids):
+            raise ValueError("검색 상태와 선택 결과가 일치하지 않습니다")
+        if self.reranking and self.reranking.ranked_ids != self.selected_ids:
+            raise ValueError("재순위화와 최종 선택 결과 불일치")
+        return self
+
+
+class RetrievalTrace(ContractModel):
+    target: NonBlankString
+    monitoring_source_id: NonBlankString
+    query: NonBlankString
+    embedding_model: NonBlankString
+    candidate: RunbookCandidate
+
+
 class RunbookEvidence(ContractModel):
     """문서 출처. 서비스 연결이 확인되지 않은 문서는 applicable_targets를 비워 둔다."""
 
@@ -130,6 +185,7 @@ class RunbookEvidence(ContractModel):
     status: EvidenceStatus
     raw_data: StrictStr | None
     applicable_targets: UniqueStrings = ()
+    retrieval: RetrievalTrace | None = None
     reason: NonBlankString | None = None
 
     @model_validator(mode="after")
@@ -138,6 +194,9 @@ class RunbookEvidence(ContractModel):
             raise ValueError("문서 수집 성공에는 원문이 필요합니다")
         if self.status != "ok" and self.reason is None:
             raise ValueError("문서 수집 실패 사유가 필요합니다")
+        if self.retrieval and (self.applicable_targets != (self.retrieval.target,)
+                               or self.reference != self.retrieval.candidate.reference):
+            raise ValueError("검색 근거와 적용 서비스·문서가 일치하지 않습니다")
         return self
 
 
@@ -176,12 +235,15 @@ class PendingClarification(ContractModel):
 
 
 class ConversationContext(ContractModel):
-    """세션별 구조화 문맥. 저장·조회 기능과 최근 관측값의 재사용은 포함하지 않는다."""
+    """세션별 사용자 요청·대상 문맥. 과거 관측값과 모델 추정은 보관하지 않는다."""
 
     thread_id: NonBlankString
     previous_targets: UniqueStrings = ()
     symptoms: UniqueStrings = ()
     pending_clarification: PendingClarification | None = None
+    last_request: NonBlankString | None = None
+    updated_at: AwareDatetime | None = None
+    last_investigation_at: AwareDatetime | None = None
 
 
 class ValidationIssue(ContractModel):

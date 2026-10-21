@@ -136,8 +136,8 @@ class OllamaFastLLM(OllamaLLM):
         return result, usage
 
     @traceable(run_type="llm", name="ollama_fast.plan")
-    def plan(self, query: str, procedure_prompt: str) -> tuple[dict, dict]:
-        resolution = resolve_targets(query)
+    def plan(self, query: str, procedure_prompt: str, resolution=None) -> tuple[dict, dict]:
+        resolution = resolution if resolution is not None else resolve_targets(query)
         if not resolution.resolved_targets:
             return normalize_plan({}, resolution), {"model": self.name, "tokens": 0, "usd": 0.0}
         system = ("당신은 ICT 운영 Supervisor의 planning 노드다. 표준 진단 절차에 따라 "

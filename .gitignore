@@ -1,6 +1,7 @@
 .venv/
 session.db
 __pycache__/
+data/.cache/
 *.log
 
 # 환경변수

@@ -26,6 +26,10 @@ class SequenceWriter:
         self.feedback.append(feedback)
         self.callbacks.append(on_token)
         output = self.outputs[min(len(self.attempts) - 1, len(self.outputs) - 1)]
+        if output is GOOD:
+            output = {**GOOD, "recommendations": [
+                {"source_id": e["source_id"], "step": 1, "target": e["retrieval"]["target"]}
+                for e in evidence if e.get("retrieval") and e["status"] == "ok"]}
         if isinstance(output, Exception):
             raise output
         if on_token:

@@ -34,7 +34,7 @@ class FastLLM(FakeLLM):
         return result, self._usage(query, str(result))
 
     @traceable(run_type="llm", name="fast_llm.plan")
-    def plan(self, query: str, procedure_prompt: str) -> tuple[dict, dict]:
+    def plan(self, query: str, procedure_prompt: str, resolution=None) -> tuple[dict, dict]:
         """Wave 4 — Plan/Task 분해. MCP Prompt가 준 표준 절차를 따라 계획을 세운다.
 
         Wave 6 재현: needs_analysis=False라고 스스로 판단해 놓고도 analysis task를
@@ -42,7 +42,7 @@ class FastLLM(FakeLLM):
         """
         raw = {"needs_analysis": False,
                "tasks": [{"agent": "analysis"}]}  # gate의 불필요 분석 작업 제거 확인용
-        result = normalize_plan(raw, resolve_targets(query))
+        result = normalize_plan(raw, resolution if resolution is not None else resolve_targets(query))
         return result, self._usage(query + procedure_prompt, str(result))
 
     @traceable(run_type="llm", name="fast_llm.analyze")

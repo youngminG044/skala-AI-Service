@@ -1,5 +1,9 @@
 # all_total_vue — 운영 인시던트 대응 에이전트 (Vue 프론트엔드 버전)
 
+현재 v2의 OpenAI 실행과 서비스별 런북 검색·재순위화는 [런북 검색 실행 가이드](runbook_search.md)를 따른다. 인덱스를 먼저 생성하고 OpenAI 실행 스크립트로 시작한다.
+
+후속 질문·새로고침·서버 재시작 후 복원은 [세션 유지 실행 가이드](session_continuity.md)를 참고한다.
+
 `all_total`과 백엔드(server.py, agent/, mcp_server.py 등)는 완전히 동일하고, 브라우저
 채팅 화면(`web_chat.html`)만 바닐라 JS 대신 **Vue 3**(CDN 글로벌 빌드, 별도 빌드 단계
 없음)로 재작성한 버전이다. 나머지 설명은 원본 `all_total`과 같다.
@@ -22,7 +26,7 @@ bash sh/setup_venv.sh
 | Python 가상환경 준비 | `bash sh/setup_venv.sh` | 없음 | `.venv` 생성 + `requirements.txt` 설치(최초 1회, 이미 있으면 설치만 재확인) |
 | 로컬 Ollama 환경 준비 | `bash sh/setup_ollama.sh` | 없음(로컬 추론) | 모델(`qwen3:0.6b`/`8b`)이 이미 있으면 재사용, 없으면 새로 pull — `OLLAMA_FORCE_REFRESH=1`을 주면 지우고 재구성 |
 | 에이전트만 기동 (로컬) | `bash sh/run_agent_ollma.sh` | 없음 | 서버만 띄워두고 직접 curl/웹으로 테스트 |
-| 에이전트만 기동 (OpenAI) | `bash sh/run_agent_openai.sh` | **과금** | 위와 동일하되 실제 API 사용 (y/N 확인) |
+| 에이전트만 기동 (OpenAI) | `bash sh/run_agent_openai.sh` | **과금** | 실제 API 사용, 기존 DB 보존·외부 추적 비활성화 |
 | 브라우저 채팅 화면 | `bash sh/run_frontend.sh` (서버 기동 후) | 백엔드에 따름 | `http://localhost:8600`에서 실제 채팅 UI로 사용 |
 
 `run_agent_*.sh`/`run_frontend.sh`는 `.venv`가 이미 있다는 가정 하에 PATH에
@@ -31,7 +35,7 @@ bash sh/setup_venv.sh
 
 모든 스크립트는 `.env`가 없으면 `cp .env.example .env` 후 본인 API 키를 채우라는 안내를
 출력하고 종료하며(외부 경로에 의존하지 않음 — 이 폴더만 떼어가도 그대로 동작),
-LangSmith 프로젝트를 백엔드별로 분리해 기록한다(`capstone-all-total[-ollama|-openai]`).
+OpenAI 실행 스크립트는 외부 추적을 끈다. 다른 실행 방식의 추적 설정은 각 스크립트를 확인한다.
 
 > 더 쉬운 설명과 실제 캡처 화면이 필요하면 [manual_ollma.md](manual_ollma.md)(로컬
 > 실모델) · [manual_openai.md](manual_openai.md)(OpenAI API)를 참고.

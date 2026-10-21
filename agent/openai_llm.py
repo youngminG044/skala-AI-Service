@@ -73,6 +73,10 @@ class OpenAILLM:
         content = data["choices"][0]["message"]["content"]
         tokens = data.get("usage", {}).get("total_tokens", 0)
         usage = {"model": self.name, "tokens": tokens,
+                 "response_model": data.get("model"),
+                 "prompt_tokens": data.get("usage", {}).get("prompt_tokens", 0),
+                 "completion_tokens": data.get("usage", {}).get("completion_tokens", 0),
+                 "cost_basis": "legacy_simulated_blended_rate_not_billing",
                  "usd": round(tokens / 1000 * self.usd_per_1k, 6)}
         return content, usage
 
@@ -102,8 +106,8 @@ class OpenAIFastLLM(OpenAILLM):
         return result, usage
 
     @traceable(run_type="llm", name="openai_fast.plan")
-    def plan(self, query: str, procedure_prompt: str) -> tuple[dict, dict]:
-        resolution = resolve_targets(query)
+    def plan(self, query: str, procedure_prompt: str, resolution=None) -> tuple[dict, dict]:
+        resolution = resolution if resolution is not None else resolve_targets(query)
         if not resolution.resolved_targets:
             return normalize_plan({}, resolution), {"model": self.name, "tokens": 0, "usd": 0.0}
         system = ("당신은 ICT 운영 Supervisor의 planning 노드다. 표준 진단 절차에 따라 "
