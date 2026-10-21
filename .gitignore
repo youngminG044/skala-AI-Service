@@ -1,0 +1,10 @@
+.venv/
+session.db
+__pycache__/
+*.log
+
+# 환경변수
+# 모든 .env 파일 제외
+.env*
+# .env.example 파일은 제외(추적 대상에 포함)
+!.env.example
