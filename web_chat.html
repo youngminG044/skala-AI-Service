@@ -36,7 +36,7 @@
   .row.user { justify-content: flex-end; }
   .bubble {
     max-width: 70%; padding: 10px 14px; border-radius: 14px; line-height: 1.5;
-    font-size: 14px; white-space: pre-wrap;
+    font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere;
   }
   .row.user .bubble { background: #5b5bd6; color: white; border-bottom-right-radius: 4px; }
   .row.agent .bubble { background: #2e2e42; border-bottom-left-radius: 4px; }
@@ -127,7 +127,9 @@ const STEP_LABELS = {
   MonitoringCoverage: e => `모니터링 수집: ${e.successful_targets.length}/${e.expected_targets.length}개 서비스${e.missing_targets.length ? ` · 미수집: ${e.missing_targets.join(', ')}` : ''}`,
   ReplanCheck: e => !e.needs_research ? null : (e.reason === 'monitoring_missing' ? `미수집 서비스 추가 조회: ${e.missing_targets.join(', ')}` : `장애유형 "${e.target}" 대응 매뉴얼 추가 조회`),
   DraftWritten: e => `답변 초안 작성 (시도 ${e.attempt})`,
-  Validation: e => e.verdict.startsWith('합격') ? '답변 형식 확인 완료' : '답변 형식 보완 → 다시 작성',
+  DraftStarted: e => `답변 작성 중 · 검증 후 표시 (시도 ${e.attempt})`,
+  DraftSkipped: () => '관측 자료 부족 · 제한 응답 준비',
+  Validation: e => e.status === 'passed' ? '관측 사실·인용 원문 일치 확인' : (e.will_retry ? `근거 검증 반려 → 다시 작성 (시도 ${e.attempt})` : '근거 검증 실패 · 확인 가능한 사실만 표시'),
   Finalize: () => '최종 답변 완성',
 };
 
@@ -192,6 +194,7 @@ createApp({
           streamItem.text = e.reply;   // 토큰 합산 결과와 서버의 최종 텍스트를 일치시킨다
           const statusLabels = { needs_clarification: '서비스 확인 필요', partial: '일부 완료 · 미확인 항목 있음', completed: '요청 처리 완료', validation_failed: '답변 검증 실패' };
           streamItem.status = statusLabels[e.metadata?.processing_status] || '';
+          if (e.metadata?.validation_status === 'passed') streamItem.status += ' · 사실·인용 대조 통과';
           if (e.prompt) log.value.push({ id: nextId++, kind: 'prompt', text: e.prompt });
           streamItem = null;
           streamAttempt = null;

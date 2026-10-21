@@ -148,7 +148,7 @@ class DraftTests(unittest.TestCase):
         draft = DraftReport(
             facts=[cpu_fact()], hypotheses=["특정 프로세스 부하 증가 가능성"],
             missing_checks=["프로세스별 CPU 수치 미수집"],
-            recommendations=["프로세스별 사용량 확인"],
+            recommendations=[{"source_id": "runbook-1", "step": 1, "quote": "프로세스별 사용량 확인"}],
         )
         restored = DraftReport.model_validate_json(draft.model_dump_json())
         self.assertEqual(restored, draft)

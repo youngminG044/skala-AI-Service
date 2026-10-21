@@ -22,7 +22,9 @@ from langsmith import traceable
 from pydantic import ValidationError
 
 from .deps import SupervisorDeps
-from .contracts import EvidenceRecord, PendingClarification, ResponseState, TargetResolution
+from .contracts import (DraftReport, EvidenceRecord, PendingClarification, ResponseState,
+                        RunbookEvidence, TargetResolution, ValidationIssue, ValidationResult)
+from .grounding import (MAX_DRAFT_ATTEMPTS, prepare_report, render_report, validate_report)
 from .retry import with_retry
 from .targets import (
     RegistryError, clarification_question, is_operational_request, normalize_plan,
@@ -42,7 +44,12 @@ class AgentState(TypedDict, total=False):
     replan_rounds: int
     retry_count: int
     parallel_elapsed: float
-    draft: str
+    draft_report: dict | None
+    draft_error: str | None
+    draft_required: bool
+    validation_result: dict
+    validation_history: list[dict]
+    analysis_text: str
     validation_attempts: int
     validation_feedback: str
     final: str
@@ -210,6 +217,7 @@ async def research_node(state: AgentState, deps: SupervisorDeps) -> dict:
     async def run_one(index: int) -> dict:
         task = tasks[index]
         source = "monitoring" if task["kind"] == "monitoring" else "runbook"
+        reference = "get_monitoring_status" if source == "monitoring" else "get_incident_runbook"
         data, retries, attempts = None, 0, 0
         status, reason = "ok", None
         try:
@@ -228,6 +236,7 @@ async def research_node(state: AgentState, deps: SupervisorDeps) -> dict:
                 if discovery_error:
                     raise RuntimeError("런북 제공 서버를 찾지 못했습니다")
                 uri = runbook_template.format(incident_type=task["target"])
+                reference = uri
                 data = await deps.mcp.read_resource(uri, server=runbook_server)
                 if not isinstance(data, str) or not data.strip() or data.startswith("# Runbook Not Found"):
                     status, reason = "unknown", "대응 런북 원문을 확보하지 못했습니다"
@@ -235,7 +244,8 @@ async def research_node(state: AgentState, deps: SupervisorDeps) -> dict:
             status, reason = "error", f"자료 수집 실패 ({type(exc).__name__})"
             retries = max(0, attempts - 1)
         return {"index": index, "target": task["target"], "source": source,
-                "status": status, "reason": reason, "data": data, "retries": retries}
+                "status": status, "reason": reason, "data": data, "retries": retries,
+                "reference": reference}
 
     started = time.perf_counter()
     results = await asyncio.gather(*(run_one(i) for i in indices))
@@ -261,6 +271,14 @@ async def research_node(state: AgentState, deps: SupervisorDeps) -> dict:
                 result.update(status="error", reason="수집 응답을 유효한 JSON 근거로 저장할 수 없습니다", data=None)
                 item = EvidenceRecord(**{**fields, "status": result["status"],
                                          "reason": result["reason"], "raw_data": None})
+            evidence.append(item.model_dump(mode="json"))
+        else:
+            item = RunbookEvidence(
+                source_id=result["source_id"], reference=result["reference"],
+                observed_at=datetime.now(timezone.utc), status=result["status"],
+                raw_data=result["data"] if isinstance(result["data"], str) else None,
+                reason=result["reason"], applicable_targets=task.get("applicable_targets", ()),
+            )
             evidence.append(item.model_dump(mode="json"))
         task["status"] = "done" if result["status"] == "ok" else "failed"
         collection_results.append(result)
@@ -353,53 +371,56 @@ async def analysis_node(state: AgentState, deps: SupervisorDeps) -> dict:
     for t in new_tasks:
         if t["agent"] == "analysis" and t["status"] == "pending":
             t["status"] = "done"
-    collected = state.get("collected", []) + [{"source": "analysis", "data": summary}]
     event = {"type": "AnalysisCompleted", "length": len(summary)}
-    return {"tasks": new_tasks, "collected": collected,
+    return {"tasks": new_tasks, "analysis_text": summary,
             "cost_usd": _cost(state, usage), "events": state["events"] + [event]}
 
 
 @traceable(name="write_node")
 async def write_node(state: AgentState, deps: SupervisorDeps) -> dict:
-    """고품질 모델로 수집에 성공한 대상만 초안 작성. 수집 자료가 없으면 제한 응답.
-
-    토큰마다 attempt 번호를 같이 실어 보낸다 — validate가 반려해 재작성(attempt 증가)
-    될 때 프론트가 새 말풍선으로 끊어서 보여줄 수 있게 하기 위함(Wave 8 재작성 루프를
-    그대로 노출)."""
+    """검증 전 모델 초안은 스트리밍하지 않는다. 관측 사실은 코드가 구성한다."""
     attempt = state.get("validation_attempts", 0) + 1
-    writer = get_stream_writer()
-    if not any(c["source"] == "monitoring" for c in state.get("collected", [])):
-        return {"draft": "1) 요청한 서비스의 모니터링 자료를 확보하지 못했습니다. "
-                         "2) 수치와 원인을 판단할 수 없습니다. 3) 도구 연결과 서비스 등록 상태를 확인해주세요.",
-                "events": state["events"] + [{"type": "DraftWritten", "attempt": attempt, "mode": "no_observations"}]}
-    scope = ", ".join(state["monitoring_coverage"]["successful_targets"])
-    query = f"실제 수집에 성공한 {scope}만 보고하세요. 다른 서비스는 조사하지 않았습니다.\n사용자 요청: {state['query']}"
-    draft, usage = await deps.quality_llm.write(
-        query, state.get("collected", []),
-        attempt, state.get("validation_feedback"),
-        on_token=lambda piece: writer(
-            {"type": "AnswerToken", "attempt": attempt, "delta": piece}))
-    return {"draft": draft, "last_prompt": usage.get("prompt"),
-            "cost_usd": _cost(state, usage),
-            "events": state["events"] + [{"type": "DraftWritten", "attempt": attempt,
-                                          "length": len(draft)}]}
+    if not state["monitoring_coverage"]["successful_targets"]:
+        return {"draft_required": False, "draft_report": None, "draft_error": None,
+                "events": state["events"] + [{"type": "DraftSkipped", "reason": "no_observations"}]}
+    get_stream_writer()({"type": "DraftStarted", "attempt": attempt})
+    usage = {"usd": 0.0}
+    candidate, error = None, None
+    try:
+        query = state["query"]
+        if state.get("analysis_text"):
+            query += "\n미검증 모델 분석 (관측 사실이 아님): " + state["analysis_text"]
+        raw, usage = await deps.quality_llm.write(
+            query, state.get("evidence", []), attempt, state.get("validation_feedback"))
+        candidate = prepare_report(raw, state.get("evidence", []),
+                                   state["monitoring_coverage"]["successful_targets"]).model_dump(mode="json")
+    except Exception as exc:
+        error = "draft_schema" if isinstance(exc, (ValidationError, ValueError, TypeError)) else "draft_generation"
+    return {"draft_required": True, "draft_report": candidate, "draft_error": error,
+            "last_prompt": usage.get("prompt"), "cost_usd": _cost(state, usage),
+            "events": state["events"] + [{"type": "DraftWritten", "attempt": attempt}]}
 
 
 @traceable(name="validate_node")
 async def validate_node(state: AgentState, deps: SupervisorDeps) -> dict:
-    """Wave 8 — 코드 기준 검증: 30자 이상 + 절차 번호 포함이어야 합격."""
-    draft = state["draft"]
-    attempts = state.get("validation_attempts", 0) + 1
-    ok = len(draft) >= 30 and "1)" in draft
-    verdict = "합격" if ok else "불합격"
-    if not ok and attempts >= 3:   # 실모델 무한 재작성 방지 — 최대 3회 후 통과 처리
-        ok, verdict = True, "합격(최대 시도 도달 — 통과 처리)"
-    feedback = None if ok else (
-        f"응답이 너무 짧습니다({len(draft)}자, 최소 30자). 절차를 1) 2) 3) 번호로 "
-        f"구체적으로 설명하세요.")
-    event = {"type": "Validation", "attempt": attempts, "verdict": verdict}
-    return {"validation_attempts": attempts, "validation_feedback": feedback,
-            "events": state["events"] + [event]}
+    if not state.get("draft_required"):
+        verdict = ValidationResult()
+        return {"validation_result": verdict.model_dump(mode="json"), "validation_feedback": None}
+    attempt = state.get("validation_attempts", 0) + 1
+    if state.get("draft_error"):
+        verdict = ValidationResult(status="failed", attempts=attempt,
+            issues=(ValidationIssue(code=state["draft_error"], message="구조화된 초안을 생성하거나 해석하지 못했습니다"),))
+    else:
+        verdict = validate_report(state.get("draft_report"), state.get("evidence", []),
+                                  state["monitoring_coverage"]["successful_targets"], attempt)
+    feedback = None if verdict.status == "passed" else "\n".join(f"{i.code}: {i.message}" for i in verdict.issues)
+    result = verdict.model_dump(mode="json")
+    return {"validation_result": result, "validation_attempts": attempt,
+            "validation_history": state.get("validation_history", []) + [result],
+            "validation_feedback": feedback,
+            "events": state["events"] + [{"type": "Validation", "attempt": attempt,
+                "status": verdict.status, "issue_codes": [i.code for i in verdict.issues],
+                "will_retry": verdict.status == "failed" and attempt < MAX_DRAFT_ATTEMPTS}]}
 
 
 @traceable(name="finalize_node")
@@ -408,8 +429,13 @@ async def finalize_node(state: AgentState, deps: SupervisorDeps) -> dict:
     coverage = state["monitoring_coverage"]
     partial = bool(resolution.unresolved_targets or coverage["missing_targets"]
                    or not any(c["source"] == "runbook" for c in state.get("collected", [])))
-    response = ResponseState(status="partial" if partial else "completed",
+    validation = ValidationResult.model_validate(state["validation_result"])
+    status = "validation_failed" if validation.status == "failed" else ("partial" if partial else "completed")
+    response = ResponseState(status=status, validation=validation,
                              clarification_question=state.get("clarification_question"))
+    report = (DraftReport.model_validate(state["draft_report"]) if validation.status == "passed" else DraftReport())
+    body = render_report(report, state.get("evidence", []), coverage["successful_targets"],
+                         limited=validation.status == "failed")
     lines = ["조사 대상: " + ", ".join(resolution.resolved_targets),
              "모니터링 수집 완료: " + (", ".join(coverage["successful_targets"]) or "없음")]
     if coverage["missing_targets"]:
@@ -420,7 +446,7 @@ async def finalize_node(state: AgentState, deps: SupervisorDeps) -> dict:
         lines.append("대응 런북: 확보하지 못함")
     if state.get("clarification_question"):
         lines.append(state["clarification_question"])
-    return {"final": "\n".join(lines) + "\n\n" + state["draft"],
+    return {"final": "\n".join(lines) + "\n\n" + body,
             "response_state": response.model_dump(mode="json"),
             "events": state["events"] + [{"type": "Finalize", "pipeline": "incident-v2", "status": response.status}]}
 
@@ -439,7 +465,9 @@ def _after_replan_check(state: AgentState) -> str:
 
 
 def _after_validate(state: AgentState) -> str:
-    return "finalize" if state.get("validation_feedback") is None else "write"
+    if state.get("validation_feedback") is None or state.get("validation_attempts", 0) >= MAX_DRAFT_ATTEMPTS:
+        return "finalize"
+    return "write"
 
 
 def build_graph(deps: SupervisorDeps):

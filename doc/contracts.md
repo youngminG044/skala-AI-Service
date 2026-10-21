@@ -11,6 +11,10 @@ Pydantic 모델로 정의합니다. Ollama와 OpenAI 중 어느 제공자를 사
 | `TargetResolution` | `requested_targets`, `resolved_targets`, `unresolved_targets` | 누락·추가·중복·중복 분류 거부 |
 | `EvidenceRecord` | `source_id`, `target`, `source_type`, `reference`, `observed_at`, `status`, `raw_data`, `reason` | 출처 필수 정보와 수집 결과 구분 |
 | `Fact` | `target`, `field`, `value`, `unit`, `source_id` | 검증할 사실의 필수 정보와 값 타입 |
+| `RunbookEvidence` | `source_id`, `reference`, `observed_at`, `status`, `raw_data`, `applicable_targets` | 문서 원문과 확인된 서비스 연결 |
+| `RunbookSelection` | `source_id`, `step`, `target` | 모델이 선택한 문서 단계 |
+| `RunbookCitation` | `source_id`, `step`, `target`, `quote` | 코드가 원문에서 구성한 인용 |
+| `DraftAnnotations` | `hypotheses`, `missing_checks`, `recommendations` | 모델이 생성할 주석과 단계 선택 |
 | `DraftReport` | `facts`, `hypotheses`, `missing_checks`, `recommendations` | 사실·추정·확인 사항·조치 분리 |
 | `PendingClarification` | `original_query`, `question`, `reason`, `candidate_targets` | 원래 요청과 확인 질문 보관 |
 | `ConversationContext` | `thread_id`, `previous_targets`, `symptoms`, `pending_clarification` | 세션별 문맥의 JSON 저장·복원 형식 |
@@ -57,7 +61,8 @@ assert targets.needs_clarification
 
 **구조 검증 통과는 사실 검증 통과가 아닙니다.** `source_id`가 실제 존재하는지,
 서비스·수치·단위가 원본과 일치하는지, 미확인·오류·분석 자료를 사실로 인용하는지와
-자유 서술에 근거 없는 주장이 있는지는 별도 검증 기능에서 판단해야 합니다.
+자유 서술에 근거 없는 주장이 있는지는 별도 검증 기능에서 판단합니다.
+[사실·근거 검증](grounding.md)은 실행 흐름에 연결되어 있으며 모델이 사실·인용문을 재작성하지 않도록 구성합니다.
 
 ## 저장과 복원
 
@@ -102,6 +107,6 @@ assert restored == context
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-테스트는 공통 구조와 임시 JSON 파일의 저장·복원을 검증합니다. LLM 호출, 서버 기동,
-기존 대화 DB 접근은 수행하지 않습니다. 실제 세션 저장·복원과 모델 응답 품질은
-각 기능을 실행 흐름에 연결한 뒤 별도로 확인합니다.
+테스트는 공통 구조, 임시 JSON 파일 복원, 대상 식별, 실제 그래프와 API의 근거 검증을 확인합니다.
+모델·MCP는 테스트 구현을 주입하고 임시 DB만 사용합니다. LLM 호출, 실제 서버 기동,
+기존 대화 DB 접근은 수행하지 않습니다. 실모델 품질과 실제 세션 복원은 별도로 확인합니다.

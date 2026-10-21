@@ -2,7 +2,7 @@
 
 모델 제공자나 실행 환경에 의존하지 않는다. 이 모듈은 입력 구조만 검증하며,
 대상 식별, 근거와 사실의 대조, 검색, 세션 저장은 각 기능에서 수행한다.
-대상·모니터링 근거·처리 상태는 그래프에서 사용하며 나머지는 후속 기능에서 연결한다.
+대상·근거·구조화 초안·검증 결과는 그래프에서 사용하며 문맥 저장은 후속 기능에서 연결한다.
 """
 from typing import Annotated, Literal
 
@@ -16,6 +16,7 @@ from pydantic import (
     StrictBool,
     StrictFloat,
     StrictInt,
+    StrictStr,
     StringConstraints,
     model_validator,
 )
@@ -38,7 +39,14 @@ ProcessingStatus = Literal[
     "needs_clarification", "completed", "partial", "validation_failed"
 ]
 ValidationStatus = Literal["not_run", "passed", "failed"]
-FactValue = NonBlankString | StrictBool | StrictInt | StrictFloat
+def _non_blank_value(value: str) -> str:
+    if not value.strip():
+        raise ValueError("사실의 문자열 값은 비어 있을 수 없습니다")
+    return value
+
+
+FactText = Annotated[str, StringConstraints(strict=True, min_length=1), AfterValidator(_non_blank_value)]
+FactValue = FactText | StrictBool | StrictInt | StrictFloat
 
 
 class ContractModel(BaseModel):
@@ -112,13 +120,50 @@ class Fact(ContractModel):
     source_id: NonBlankString
 
 
-class DraftReport(ContractModel):
+class RunbookEvidence(ContractModel):
+    """문서 출처. 서비스 연결이 확인되지 않은 문서는 applicable_targets를 비워 둔다."""
+
+    source_id: NonBlankString
+    source_type: Literal["runbook"] = "runbook"
+    reference: NonBlankString
+    observed_at: AwareDatetime
+    status: EvidenceStatus
+    raw_data: StrictStr | None
+    applicable_targets: UniqueStrings = ()
+    reason: NonBlankString | None = None
+
+    @model_validator(mode="after")
+    def check_collection(self) -> "RunbookEvidence":
+        if self.status == "ok" and (self.raw_data is None or not self.raw_data.strip()):
+            raise ValueError("문서 수집 성공에는 원문이 필요합니다")
+        if self.status != "ok" and self.reason is None:
+            raise ValueError("문서 수집 실패 사유가 필요합니다")
+        return self
+
+
+class RunbookSelection(ContractModel):
+    source_id: NonBlankString
+    step: int = Field(ge=1, strict=True)
+    target: NonBlankString | None = None
+
+
+class RunbookCitation(RunbookSelection):
+    quote: NonBlankString
+
+
+class DraftAnnotations(ContractModel):
+    """모델이 작성할 영역. 관측 사실은 모델에게 재작성을 맡기지 않는다."""
+
+    hypotheses: tuple[NonBlankString, ...] = ()
+    missing_checks: tuple[NonBlankString, ...] = ()
+    recommendations: tuple[RunbookSelection, ...] = ()
+
+
+class DraftReport(DraftAnnotations):
     """사실과 자유 서술을 분리한 초안. 빈 초안도 작성 중 상태로 허용한다."""
 
     facts: tuple[Fact, ...] = ()
-    hypotheses: tuple[NonBlankString, ...] = ()
-    missing_checks: tuple[NonBlankString, ...] = ()
-    recommendations: tuple[NonBlankString, ...] = ()
+    recommendations: tuple[RunbookCitation, ...] = ()
 
 
 class PendingClarification(ContractModel):

@@ -42,6 +42,7 @@ LangSmith 프로젝트를 백엔드별로 분리해 기록한다(`capstone-all-t
 [공통 데이터 구조 사용 가이드](contracts.md)를 참고한다. 현재 이 구조는 기존 실행
 흐름에서 조사 대상·모니터링 근거·처리 상태에 사용한다.
 [조사 대상 확인과 기능 검증 가이드](target_scope.md)에서 대상 식별 규칙과 상태 확인 방법을 설명한다.
+[사실·근거 검증 가이드](grounding.md)에서 관측 사실·문서 인용 대조와 제한 응답을 설명한다.
 
 ```mermaid
 flowchart TB
@@ -145,7 +146,7 @@ sequenceDiagram
     M-->>G: 실측 수치 + runbook 본문
     G->>G: replan_check — 부족하면 조사 추가
     G->>G: analysis — needs_analysis일 때만 수집 결과 비교 분석
-    G->>G: write → validate (형식 미달 시 반려·재작성)
+    G->>G: write → validate (근거 대조 반려 시 재작성, 최대 3회 후 제한 응답)
     G-->>U: 근거 기반 진단 결과
 ```
 

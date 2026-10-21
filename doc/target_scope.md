@@ -35,9 +35,10 @@
 | `completed` | 확인된 요청 범위의 처리 완료 |
 | `partial` | 미등록 대상·수집 실패·필수 자료 미확보 또는 등록 목록 오류 |
 
-`completed`는 **사실 검증 통과를 의미하지 않습니다**. `metadata.validation_status`는
-현재 `not_run`입니다. 기존 답변 형식 검사와 원본 자료에 대한 사실 검증은 구별합니다.
-`validation_failed`는 향후 사실 검증 기능에서 사용합니다.
+`completed`는 요청 처리 상태입니다. 사실·인용 대조 결과는 별도인
+`metadata.validation_status`의 `not_run`·`passed`·`failed`로 확인합니다.
+최대 재작성 후 검증 실패는 `processing_status=validation_failed`로 표시합니다.
+[사실·근거 검증 가이드](grounding.md)에서 범위와 실패 처리 기준을 설명합니다.
 
 ## 실행
 
@@ -87,4 +88,4 @@ POST `/chat`의 `metadata`와 SSE `/chat/stream`의 `FinalAnswer.metadata`는 �
 조사 예정·성공·미수집 대상을 반환합니다. 화면에도 확인 질문과 일부 완료 상태를 표시합니다.
 
 후속 지칭 해석, 확인 질문의 짧은 답변 연결, 구조화 문맥 영구 저장과 브라우저 복원은
-아직 연결하지 않았습니다. 런북 선택은 기존 규칙을 사용하며 사실·근거 검증도 후속 기능입니다.
+아직 연결하지 않았습니다. 런북 선택은 기존 규칙을 사용하며 사실·근거 대조 검증은 실행 흐름에 연결되어 있습니다.

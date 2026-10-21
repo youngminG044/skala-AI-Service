@@ -25,6 +25,7 @@ from pydantic import BaseModel
 from agent.deps import SupervisorDeps
 from agent.fake_llm import FastLLM, QualityLLM
 from agent.graph import build_graph
+from agent.grounding import VALIDATION_SCOPE
 from agent.mcp_client import MCPClient
 from agent.session_store import SqliteSessionStore
 from agent.supervisor_v1 import run_v1
@@ -124,6 +125,8 @@ def _metadata(result: dict, run_id: str | None) -> dict:
         "target_resolution": result.get("target_resolution"),
         "monitoring_coverage": result.get("monitoring_coverage"),
         "response_state": result.get("response_state"),
+        "validation_scope": VALIDATION_SCOPE if result.get("validation_result", {}).get("status") in ("passed", "failed") else None,
+        "validation_history": result.get("validation_history", []),
     }
 
 
@@ -175,6 +178,8 @@ async def chat_stream(message: str, thread_id: str = "default"):
                     {"query": message, "thread_id": thread_id, "history": history,
                      "events": [], "cost_usd": 0.0}, stream_mode=["updates", "custom"]):
                 if mode == "custom":
+                    if payload.get("type") == "AnswerToken" and result.get("route") == "incident":
+                        continue
                     yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
                     continue
                 for node_name, delta in payload.items():
@@ -187,7 +192,8 @@ async def chat_stream(message: str, thread_id: str = "default"):
         deps.session_store.append(thread_id, "user", message)
         deps.session_store.append(thread_id, "assistant", result["final"])
         final_event = {"type": "FinalAnswer", "reply": result["final"],
-                       "prompt": result.get("last_prompt"), "metadata": _metadata(result, None)}
+                       "prompt": result.get("last_prompt") if result.get("route") == "chat" else None,
+                       "metadata": _metadata(result, None)}
         yield f"data: {json.dumps(final_event, ensure_ascii=False)}\n\n"
         yield "data: [DONE]\n\n"
 

@@ -4,6 +4,7 @@ import copy
 import importlib
 import json
 import os
+import re
 from pathlib import Path
 import tempfile
 import unittest
@@ -55,11 +56,7 @@ class TestQualityLLM:
 
     async def write(self, query, collected, attempt, feedback, on_token=None):
         self.inputs.append(copy.deepcopy(collected))
-        names = ", ".join(c["target"] for c in collected if c["source"] == "monitoring")
-        reply = f"1) {names} 모니터링 자료를 확인했습니다. 2) 수집된 알림을 확인하세요. 3) 대응 후 다시 상태를 확인하세요."
-        if on_token:
-            on_token(reply)
-        return reply, {"usd": 0}
+        return {"hypotheses": [], "missing_checks": [], "recommendations": []}, {"usd": 0}
 
 
 class TestMCP:
@@ -169,14 +166,14 @@ class GraphTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["monitoring_coverage"]["missing_targets"], ["cache-service"])
         self.assertEqual(result["response_state"]["status"], "partial")
         self.assertIn("모니터링 미수집: cache-service", result["final"])
-        self.assertEqual([c["target"] for c in deps.quality_llm.inputs[0] if c["source"] == "monitoring"],
+        self.assertEqual([c["target"] for c in deps.quality_llm.inputs[0] if c["source_type"] == "monitoring" and c["status"] == "ok"],
                          ["payments-service"])
 
     async def test_recovery_on_second_round_becomes_completed_without_duplicate_success(self):
         result, deps = await self.run_graph("cache-service 상태", {"cache-service": "once"})
         self.assertEqual(deps.mcp.calls, ["cache-service", "cache-service"])
         self.assertEqual(result["response_state"]["status"], "completed")
-        self.assertEqual([e["status"] for e in result["evidence"]], ["error", "ok"])
+        self.assertEqual([e["status"] for e in result["evidence"] if e["source_type"] == "monitoring"], ["error", "ok"])
 
     async def test_unknown_wrong_service_and_missing_metrics_are_not_observed_facts(self):
         for behavior in ("unknown", "wrong_target", "invalid_metric", "nan_metric", "non_json"):
@@ -257,7 +254,9 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
                 final = [event for event in events if event["type"] == "FinalAnswer"]
                 self.assertEqual(len(final), 1)
                 self.assertTrue(stream.text.rstrip().endswith("data: [DONE]"))
-                self.assertEqual(post["reply"], final[0]["reply"])
+                # 독립된 두 수집의 출처 ID와 수집 시각은 다르므로, 사실·서술을 비교한다.
+                comparable = lambda text: re.sub(r"  근거:.*\n?", "", text)
+                self.assertEqual(comparable(post["reply"]), comparable(final[0]["reply"]))
                 for key in ("processing_status", "validation_status", "target_resolution", "monitoring_coverage", "response_state"):
                     self.assertEqual(post["metadata"][key], final[0]["metadata"][key])
                 self.assertEqual(self.store.load("sse")[-1]["content"], final[0]["reply"])

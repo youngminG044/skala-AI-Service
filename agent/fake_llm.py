@@ -4,6 +4,7 @@
 정해진 응답을 돌려준다. 각 호출은 LangSmith에 run_type="llm"으로 기록되고, 문자열
 길이 기반 토큰 추정치로 비용을 계산해 상태에 누적한다 (Wave 10a의 모델 분리 근거).
 """
+import json
 import re
 
 from langsmith import traceable
@@ -85,35 +86,9 @@ class QualityLLM(FakeLLM):
     """최종 답변 작성 전담 (고품질·고비용)."""
 
     @traceable(run_type="llm", name="quality_llm.write")
-    async def write(self, query: str, collected: list[dict], attempt: int,
-              feedback: str | None, on_token=None) -> tuple[str, dict]:
-        """Wave 8 재현: 1차 초안은 의도적으로 저품질(너무 짧음) → validator가 반려하면
-        피드백을 반영한 구조화된 2차 초안을 내놓는다.
-
-        fake 백엔드는 실제 네트워크 호출이 없어 토큰 단위로 쪼갤 대상이 없다 —
-        ollama_llm.py와 인터페이스(on_token 콜백)만 맞추고 결과를 한 번에 반환한다."""
-        if attempt == 1:
-            draft = "재시작하면 됩니다."
-            if on_token is not None:
-                on_token(draft)
-            return draft, self._usage(query, draft)
-
-        mon = [c for c in collected if c["source"] == "monitoring"]
-        run = [c for c in collected if c["source"] == "runbook"]
-        summary = " · ".join(
-            f"{c['data']['system_name']} 상태={c['data']['status']}, "
-            f"CPU {c['data']['cpu_percent']}% (알림 {len(c['data']['alerts'])}건)"
-            for c in mon)
-        lines = [f"'{query}' 진단 결과:", f"1) 모니터링: {summary}"]
-        if run:
-            body_lines = [l.strip() for l in run[0]["data"].strip().splitlines() if l.strip()]
-            title = body_lines[0].lstrip("# ")
-            steps = [m.group(1) for l in body_lines[1:]
-                     if (m := re.match(r"^\d+\.\s+(.*)", l))]
-            advice = " ".join(steps[1:3]) or "표준 절차를 따라 조치하세요."
-            lines.append(f"2) 표준 절차: '{title}'에 따라 {advice}")
-        lines.append("3) 정상화 확인 후 원인 분석과 재발 방지 대책을 문서화하세요.")
-        draft = " ".join(lines)
-        if on_token is not None:
-            on_token(draft)
-        return draft, self._usage(query + str(feedback), draft)
+    async def write(self, query: str, evidence: list[dict], attempt: int,
+                    feedback: str | None, on_token=None) -> tuple[dict, dict]:
+        """정상 주석을 반환한다. 실패 초안은 테스트에서 명시적으로 주입한다."""
+        result = {"hypotheses": [], "missing_checks": ["원인 확정을 위한 추가 자료 확인 필요"],
+                  "recommendations": []}
+        return result, self._usage(query, json.dumps(result, ensure_ascii=False))
