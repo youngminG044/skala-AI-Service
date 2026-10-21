@@ -12,7 +12,6 @@ fc
 """
 import json
 import re
-from pathlib import Path
 
 import httpx
 from langsmith import traceable
@@ -20,39 +19,7 @@ from langsmith import traceable
 OLLAMA_URL = "http://127.0.0.1:11434/api/chat"
 
 
-def _load_known_systems() -> set[str]:
-    """KNOWN_SYSTEMS를 data/monitoring.json의 실제 시스템 키들로 동적으로 맞춘다 —
-    하드코딩된 2개짜리 목록이 모니터링 데이터와 어긋나던 문제(payments/cache/gateway/
-    log-service 미인식) 수정."""
-    path = Path(__file__).resolve().parent.parent / "data" / "monitoring.json"
-    try:
-        return set(json.loads(path.read_text()).keys())
-    except (OSError, json.JSONDecodeError):
-        return {"auth-service", "web-01"}
-
-
-KNOWN_SYSTEMS = _load_known_systems()
-
-
-def _guess_target(query: str) -> str:
-    """plan()의 코드 레벨 정규화에서 쓰는 안전망 — 소형 모델(fast_llm, 이전 기본값
-    qwen2.5:0.5b에서 실측된 사례)이 target을
-    아예 안 내놓거나(예: agent=analysis만 던지고 research task를 하나도 안 만듦) 오타
-    (예: "payment_service")를 내놓으면, 하드코딩된 "auth-service"로 덮어쓰는 대신
-    KNOWN_SYSTEMS 멤버십 매칭으로 쿼리에서 실제 시스템명을 다시 찾는다(W6 정신:
-    모델 출력을 그대로 믿지 않고 코드가 보정). 아무것도 안 걸리면 auth-service로 폴백."""
-    matches = [(query.index(s), s) for s in KNOWN_SYSTEMS if s in query]
-    return min(matches)[1] if matches else "auth-service"
-
-
-def _guess_targets(query: str) -> list[str]:
-    """research task가 통째로 0개일 때(모델이 agent=analysis만 던지는 등 계획 자체가
-    붕괴됐을 때) 쓰는 복구용 — _guess_target처럼 하나만 고르면 쿼리에 언급된 다른
-    시스템이 조사에서 통째로 빠지고, write 단계가 그 빈 자리를 수치까지 지어내서
-    채우는 할루시네이션으로 이어진다(실측 사례: cache-service 미조사 → "CPU 53.5%"
-    조작). 쿼리에 등장하는 KNOWN_SYSTEMS 전부를 복구한다."""
-    matched = sorted(s for s in KNOWN_SYSTEMS if s in query)
-    return matched or ["auth-service"]
+from .targets import normalize_plan, resolve_targets
 
 
 ROUTE_SCHEMA = {
@@ -169,50 +136,21 @@ class OllamaFastLLM(OllamaLLM):
 
     @traceable(run_type="llm", name="ollama_fast.plan")
     def plan(self, query: str, procedure_prompt: str) -> tuple[dict, dict]:
+        resolution = resolve_targets(query)
+        if not resolution.resolved_targets:
+            return normalize_plan({}, resolution), {"model": self.name, "tokens": 0, "usd": 0.0}
         system = ("당신은 ICT 운영 Supervisor의 planning 노드다. 표준 진단 절차에 따라 "
                   "실행 계획(tasks)을 JSON으로 세워라. "
-                  "사용자 요청에 등장한 시스템마다 agent=research task를 하나씩 세워라 "
-                  f"(알려진 시스템: {', '.join(sorted(KNOWN_SYSTEMS))} — 특정 시스템이 "
-                  "언급되지 않았으면 auth-service를 기본으로 조사하라). "
-                  "패턴 분석이 꼭 필요하다고 판단되면 agent=analysis task를 추가해도 된다.")
+                  f"확인된 조사 대상은 {', '.join(resolution.resolved_targets)}뿐이다. "
+                  "각 대상마다 agent=research 작업을 하나씩 만들고 다른 대상을 추가하지 마라. "
+                  "패턴 비교가 꼭 필요할 때만 analysis 작업을 추가하라.")
         user = f"## 표준 절차\n{procedure_prompt}\n\n## 사용자 요청\n{query}"
         content, usage = self._chat(system, user, schema=PLAN_SCHEMA)
-
-        # 소형 모델 출력에 대한 코드 레벨 정규화 — 스키마는 강제돼도 내용은 흔들릴 수
-        # 있으므로(대상 시스템 오타, task 누락/중복) 실행 가능한 형태로 보정한다.
         try:
             raw = json.loads(content)
-        except json.JSONDecodeError:
-            raw = {"needs_analysis": False, "tasks": []}
-        tasks, seen, idx = [], set(), 0
-        analysis_added = False
-        for t in raw.get("tasks", []):
-            agent = t.get("agent")
-            if agent == "research":
-                target = t.get("target", "")
-                target = target if target in KNOWN_SYSTEMS else _guess_target(query)
-                if target in seen:
-                    continue
-                seen.add(target)
-                tasks.append({"id": f"task-{idx}", "agent": "research",
-                              "kind": "monitoring", "target": target,
-                              "status": "pending"})
-                idx += 1
-            elif agent == "analysis" and not analysis_added:
-                analysis_added = True
-                tasks.append({"id": "task-analysis", "agent": "analysis",
-                              "kind": "pattern-analysis", "status": "pending"})
-        if not seen:   # research가 하나도 없으면 실행 불능 — 쿼리에 등장하는
-            # KNOWN_SYSTEMS 전부를 복구(하나만 복구하면 나머지가 조사 누락된 채
-            # write 단계에서 수치가 조작될 수 있음)
-            recovered = [{"id": f"task-{i}", "agent": "research",
-                          "kind": "monitoring", "target": target,
-                          "status": "pending"}
-                         for i, target in enumerate(_guess_targets(query))]
-            tasks = recovered + tasks
-        result = {"needs_analysis": bool(raw.get("needs_analysis", False)),
-                  "tasks": tasks}
-        return result, usage
+        except (json.JSONDecodeError, TypeError):
+            raw = {}
+        return normalize_plan(raw, resolution), usage
 
     @traceable(run_type="llm", name="ollama_fast.analyze")
     def analyze(self, collected: list[dict]) -> tuple[str, dict]:

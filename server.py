@@ -119,6 +119,11 @@ def _metadata(result: dict, run_id: str | None) -> dict:
         "supervisor_version": app.state.deps.version,
         "instance_id": app.state.instance_id,
         "langsmith_run_id": run_id,
+        "processing_status": result.get("response_state", {}).get("status"),
+        "validation_status": result.get("response_state", {}).get("validation", {}).get("status"),
+        "target_resolution": result.get("target_resolution"),
+        "monitoring_coverage": result.get("monitoring_coverage"),
+        "response_state": result.get("response_state"),
     }
 
 
@@ -160,11 +165,9 @@ async def chat_stream(message: str, thread_id: str = "default"):
             result = await run_v1(deps, message, thread_id, history)
             for ev in result["events"]:
                 yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
-            yield f"data: {json.dumps({'type': 'FinalAnswer', 'reply': result['final']}, ensure_ascii=False)}\n\n"
         else:
             seen = 0
-            final = ""
-            last_prompt = None   # finalize까지 살아남은 최종 write/chat 호출의 실제 프롬프트
+            result = {}
             # stream_mode를 리스트로 주면 (mode, payload) 튜플이 나온다 — "updates"는
             # 노드가 끝날 때마다의 상태 델타, "custom"은 write_node/chat_answer_node가
             # get_stream_writer()로 실행 중에 즉시 흘려보내는 토큰(AnswerToken) 이벤트다.
@@ -175,18 +178,17 @@ async def chat_stream(message: str, thread_id: str = "default"):
                     yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
                     continue
                 for node_name, delta in payload.items():
+                    result.update(delta)
                     for ev in (delta.get("events") or [])[seen:]:
                         ev = {**ev, "node": node_name}
                         yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
                     if delta.get("events"):
                         seen = len(delta["events"])
-                    if delta.get("final"):
-                        final = delta["final"]
-                    if delta.get("last_prompt"):
-                        last_prompt = delta["last_prompt"]
-            yield f"data: {json.dumps({'type': 'FinalAnswer', 'reply': final, 'prompt': last_prompt}, ensure_ascii=False)}\n\n"
-            deps.session_store.append(thread_id, "user", message)
-            deps.session_store.append(thread_id, "assistant", final)
+        deps.session_store.append(thread_id, "user", message)
+        deps.session_store.append(thread_id, "assistant", result["final"])
+        final_event = {"type": "FinalAnswer", "reply": result["final"],
+                       "prompt": result.get("last_prompt"), "metadata": _metadata(result, None)}
+        yield f"data: {json.dumps(final_event, ensure_ascii=False)}\n\n"
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(gen(), media_type="text/event-stream")

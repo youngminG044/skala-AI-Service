@@ -38,6 +38,11 @@ LangSmith 프로젝트를 백엔드별로 분리해 기록한다(`capstone-all-t
 
 ## 아키텍처 구성도
 
+새 기능에서 사용할 공통 조사 대상·근거·초안·문맥 구조와 기능 테스트 실행 방법은
+[공통 데이터 구조 사용 가이드](contracts.md)를 참고한다. 현재 이 구조는 기존 실행
+흐름에서 조사 대상·모니터링 근거·처리 상태에 사용한다.
+[조사 대상 확인과 기능 검증 가이드](target_scope.md)에서 대상 식별 규칙과 상태 확인 방법을 설명한다.
+
 ```mermaid
 flowchart TB
     User["사용자 / curl"] -->|"POST /chat, GET /chat/stream"| API
@@ -53,7 +58,9 @@ flowchart TB
 
     subgraph Graph["agent/graph.py — LangGraph StateGraph (v2)"]
         Route["route"] -->|chat| ChatAnswer["chat_answer"]
-        Route -->|incident| Plan["plan"]
+        Route -->|incident| Resolve["resolve_targets"]
+        Resolve -->|확인된 대상 있음| Plan["plan"]
+        Resolve -->|대상 없음·미확인| Clarify["clarify_target"]
         Plan --> Gate["gate"]
         Gate --> Research["research"]
         Research --> ReplanCheck["replan_check"]

@@ -10,7 +10,7 @@ FastAPI 백엔드(server.py)가 lifespan에서 이 파일을 subprocess(stdio)�
 """
 import json
 import random
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastmcp import FastMCP
@@ -23,9 +23,9 @@ DATA_DIR = Path(__file__).parent / "data"
 
 class SystemStatus(BaseModel):
     system_name: str = Field(description="시스템 이름")
-    status: str = Field(description="상태: healthy / degraded / down")
-    cpu_percent: float = Field(description="CPU 사용률 (%)")
-    memory_percent: float = Field(description="메모리 사용률 (%)")
+    status: str = Field(description="상태: healthy / degraded / down / unknown")
+    cpu_percent: float | None = Field(description="CPU 사용률 (%), 미확인 시 null")
+    memory_percent: float | None = Field(description="메모리 사용률 (%), 미확인 시 null")
     last_checked: str = Field(description="마지막 체크 시각 (ISO 8601)")
     alerts: list[str] = Field(default_factory=list, description="활성 알림 목록")
 
@@ -37,8 +37,8 @@ def get_monitoring_status(system_name: str) -> SystemStatus:
     if system_name not in monitoring_data:
         return SystemStatus(
             system_name=system_name, status="unknown",
-            cpu_percent=0.0, memory_percent=0.0,
-            last_checked=datetime.now().isoformat(),
+            cpu_percent=None, memory_percent=None,
+            last_checked=datetime.now(timezone.utc).isoformat(),
             alerts=[f"System '{system_name}' not found in monitoring"],
         )
     data = monitoring_data[system_name]
@@ -48,7 +48,7 @@ def get_monitoring_status(system_name: str) -> SystemStatus:
         status=data["status"],
         cpu_percent=round(data["cpu_base"] + jitter, 1),
         memory_percent=round(data["memory_base"] + jitter / 2, 1),
-        last_checked=datetime.now().isoformat(timespec="microseconds"),
+        last_checked=datetime.now(timezone.utc).isoformat(timespec="microseconds"),
         alerts=data.get("alerts", []),
     )
 
