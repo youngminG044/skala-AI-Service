@@ -8,7 +8,7 @@ import httpx
 from pydantic import ValidationError
 
 from agent.contracts import DraftAnnotations, DraftReport, RunbookCitation, RunbookEvidence
-from agent.grounding import canonical_facts, prepare_report, render_report, validate_report
+from agent.grounding import canonical_facts, prepare_report, render_report, validate_report, writer_prompt
 
 
 def evidence():
@@ -33,6 +33,19 @@ def valid_report():
 
 
 class GroundingTests(unittest.TestCase):
+    def test_mixed_request_prompt_scopes_only_successful_observations_without_relaxing_validation(self):
+        sources = evidence()
+        failed = copy.deepcopy(sources[0])
+        failed.update(source_id="failed-billing", target="billing-service", status="error", raw_data=None)
+        system, user = writer_prompt("payments-service와 billing-service 상태 확인", sources + [failed], None)
+        allowed = json.loads(user.splitlines()[1])
+        self.assertEqual(allowed, ["payments-service"])
+        self.assertIn("미등록·미확인·수집 실패 서비스는 언급하지 마라", system)
+        # 미조사 대상의 언급은 프롬프트 보완 후에도 검증에서 거부한다.
+        raw = {"missing_checks": ["billing-service의 상태 확인 필요"]}
+        report = prepare_report(raw, sources, TARGETS)
+        self.assertIn("text_target", {i.code for i in validate_report(report, sources, TARGETS, 1).issues})
+
     def codes(self, report=None, sources=None, targets=None):
         return {issue.code for issue in validate_report(report if report is not None else valid_report(),
             sources if sources is not None else evidence(), targets or TARGETS, 1).issues}
