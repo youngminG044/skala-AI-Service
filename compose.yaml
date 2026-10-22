@@ -1,0 +1,101 @@
+name: ops-agent
+
+x-runtime: &runtime
+  image: ${COMPOSE_PROJECT_NAME:-ops-agent}-runtime:local
+  build:
+    context: .
+    target: runtime
+  init: true
+  user: "10001:10001"
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+x-openai: &openai
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  LLM_BACKEND: openai
+  SUPERVISOR_VERSION: v2
+  OPENAI_FAST_MODEL: ${OPENAI_FAST_MODEL:-gpt-4o-mini}
+  OPENAI_QUALITY_MODEL: ${OPENAI_QUALITY_MODEL:-gpt-4o}
+  RUNBOOK_EMBEDDING_BACKEND: openai
+  OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
+  OPENAI_EMBEDDING_DIMENSIONS: ${OPENAI_EMBEDDING_DIMENSIONS:-1536}
+  RUNBOOK_RERANK_ENABLED: ${RUNBOOK_RERANK_ENABLED:-true}
+  OPENAI_RERANK_MODEL: ${OPENAI_RERANK_MODEL:-gpt-4o-mini}
+  RUNBOOK_SCORE_THRESHOLD: ${RUNBOOK_SCORE_THRESHOLD:-0.42}
+  RUNBOOK_SCORE_GAP: ${RUNBOOK_SCORE_GAP:-0.06}
+  RUNBOOK_INDEX_PATH: /state/index/runbook_index.json
+  LANGCHAIN_TRACING_V2: "false"
+  LANGSMITH_TRACING: "false"
+
+services:
+  backend:
+    <<: *runtime
+    command: ["backend"]
+    environment:
+      <<: *openai
+      SESSION_DB_PATH: /state/sessions/session.db
+    volumes:
+      - sessions:/state/sessions
+      - runbook_index:/state/index:ro
+    restart: unless-stopped
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8100/health', timeout=3).read()"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 45s
+
+  frontend:
+    <<: *runtime
+    command: ["frontend"]
+    environment:
+      BACKEND_URL: http://backend:8100
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-8600}:8600"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 15s
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8600/health', timeout=10).read()"]
+      interval: 15s
+      timeout: 12s
+      retries: 4
+      start_period: 20s
+
+  indexer:
+    <<: *runtime
+    profiles: ["tools"]
+    command: ["indexer"]
+    environment:
+      <<: *openai
+    volumes:
+      - runbook_index:/state/index
+    restart: "no"
+
+  tests:
+    image: ${COMPOSE_PROJECT_NAME:-ops-agent}-tests:local
+    build:
+      context: .
+      target: tests
+    profiles: ["tools"]
+    command: ["tests"]
+    init: true
+    user: "10001:10001"
+    environment:
+      LANGCHAIN_TRACING_V2: "false"
+      LANGSMITH_TRACING: "false"
+    restart: "no"
+
+volumes:
+  sessions:
+  runbook_index:

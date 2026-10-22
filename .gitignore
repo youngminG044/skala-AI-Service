@@ -9,3 +9,6 @@ data/.cache/
 .env*
 # .env.example 파일은 제외(추적 대상에 포함)
 !.env.example
+
+# Docker 대화 DB의 로컬 백업
+.backups/
