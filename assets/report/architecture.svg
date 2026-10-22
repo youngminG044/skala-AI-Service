@@ -1,0 +1,412 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="3200" height="3400" viewBox="0 0 3200 3400" role="img" aria-labelledby="title desc">
+<title id="title">운영 장애 대응 AI Agent — 현재 구현 아키텍처</title>
+<desc id="desc">Docker Compose의 frontend/backend 컨테이너와 내부 네트워크, MCP 하위 프로세스, 세션·런북 인덱스 볼륨, 일회성 indexer/tests 및 외부 OpenAI API를 표시한다. 아래에는 기존 LangGraph 13개 노드와 RAG·검증·세션 처리 상세를 유지한다.</desc>
+<rect width="3200" height="3400" fill="#FAFBFE"/>
+<text x="80.00" y="46" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="58" font-weight="700" fill="#243047">운영 장애 대응 AI Agent</text>
+<text x="80.00" y="119" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="31" font-weight="400" fill="#617089">현재 구현 아키텍처  |  Docker Compose · OpenAI · LangGraph v2</text>
+<text x="2993.00" y="61" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="27" font-weight="400" fill="#617089">2026.10.22</text>
+<text x="2625.00" y="109" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="24" font-weight="400" fill="#617089">GitDiagram의 영역 구성을 참고 · 실제 코드로 재구성</text>
+<rect x="520" y="200" width="2080" height="800" rx="24" fill="#EEF5FF" stroke="#83A7D4" stroke-width="2"/>
+<text x="548.00" y="224" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="32" font-weight="700" fill="#243047">Docker Compose · ops-agent</text>
+<text x="548.00" y="267" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">내부 네트워크 · 상시 컨테이너 2개 / 일회성 작업 2개</text>
+<rect x="1200" y="300" width="750" height="340" rx="20" fill="#FFFFFF" stroke="#83A7D4" stroke-width="3"/>
+<text x="1230.00" y="321" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="29" font-weight="700" fill="#243047">backend 컨테이너 · 단일 worker</text>
+<polyline points="430,450 600,450" fill="none" stroke="#69788E" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="600.00,450.00 586.37,456.25 586.37,443.75" fill="#69788E"/>
+<polyline points="1100,450 1200,450" fill="none" stroke="#69788E" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="1200.00,450.00 1186.37,456.25 1186.37,443.75" fill="#69788E"/>
+<polyline points="1400,480 1400,515" fill="none" stroke="#8B7AAE" stroke-width="3" stroke-linejoin="round" stroke-dasharray="8 7"/>
+<polygon points="1400.00,515.00 1393.75,501.37 1406.25,501.37" fill="#8B7AAE"/>
+<polyline points="1750,480 1750,515" fill="none" stroke="#8B7AAE" stroke-width="3" stroke-linejoin="round" stroke-dasharray="8 7"/>
+<polygon points="1750.00,515.00 1743.75,501.37 1756.25,501.37" fill="#8B7AAE"/>
+<polyline points="1950,395 1990,395 1990,270 2660,270 2660,440 2700,440" fill="none" stroke="#8B7AAE" stroke-width="3" stroke-linejoin="round" stroke-dasharray="8 7"/>
+<polygon points="2700.00,440.00 2686.37,446.25 2686.37,433.75" fill="#8B7AAE"/>
+<polyline points="2500,450 2620,450 2620,660 2910,660 2910,580" fill="none" stroke="#8B7AAE" stroke-width="3" stroke-linejoin="round" stroke-dasharray="8 7"/>
+<polygon points="2910.00,580.00 2916.25,593.63 2903.75,593.63" fill="#8B7AAE"/>
+<polyline points="1400,640 1400,740" fill="none" stroke="#278CA1" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="1400.00,740.00 1393.75,726.37 1406.25,726.37" fill="#278CA1"/>
+<polygon points="1400.00,640.00 1406.25,653.63 1393.75,653.63" fill="#278CA1"/>
+<polyline points="1780,740 1780,640" fill="none" stroke="#278CA1" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="1780.00,640.00 1786.25,653.63 1773.75,653.63" fill="#278CA1"/>
+<polyline points="2275,550 2275,625 1990,625 1990,810 1950,810" fill="none" stroke="#278CA1" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="1950.00,810.00 1963.63,803.75 1963.63,816.25" fill="#278CA1"/>
+<rect x="82" y="355" width="350" height="200" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="80" y="350" width="350" height="200" rx="16" fill="#FFFFFF" stroke="#DCB985" stroke-width="2"/>
+<rect x="81" y="365" width="5" height="170" rx="2" fill="#DCB985" stroke="#DCB985" stroke-width="2"/>
+<text x="203.00" y="402" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="30" font-weight="700" fill="#243047">브라우저</text>
+<text x="181.00" y="442" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">Vue 3 채팅 화면</text>
+<text x="182.00" y="475" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">localhost:8600</text>
+<rect x="602" y="355" width="500" height="230" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="600" y="350" width="500" height="230" rx="16" fill="#FFFFFF" stroke="#DCB985" stroke-width="2"/>
+<rect x="601" y="365" width="5" height="200" rx="2" fill="#DCB985" stroke="#DCB985" stroke-width="2"/>
+<text x="623.00" y="400" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="30" font-weight="700" fill="#243047">frontend 컨테이너</text>
+<text x="623.00" y="440" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">web_demo_server.py :8600</text>
+<text x="623.00" y="473" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">화면 제공 · API/SSE 프록시</text>
+<text x="623.00" y="506" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">공개: 127.0.0.1:8600</text>
+<text x="600.00" y="605" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">BACKEND_URL = http://backend:8100</text>
+<text x="600.00" y="647" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">backend healthy 확인 후 기동</text>
+<text x="600.00" y="689" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">API 키·데이터 볼륨 없음</text>
+<rect x="1242" y="380" width="670" height="105" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="1240" y="375" width="670" height="105" rx="16" fill="#FFFFFF" stroke="#83A7D4" stroke-width="2"/>
+<rect x="1241" y="390" width="5" height="75" rx="2" fill="#83A7D4" stroke="#83A7D4" stroke-width="2"/>
+<text x="1263.00" y="396" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="29" font-weight="700" fill="#243047">FastAPI :8100 · LangGraph v2</text>
+<text x="1263.00" y="435" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">호스트 포트 미공개 · OpenAI API 키 사용</text>
+<rect x="1242" y="520" width="320" height="90" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="1240" y="515" width="320" height="90" rx="16" fill="#FFFFFF" stroke="#9BC8AC" stroke-width="2"/>
+<rect x="1241" y="530" width="5" height="60" rx="2" fill="#9BC8AC" stroke="#9BC8AC" stroke-width="2"/>
+<text x="1263.00" y="530" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="27" font-weight="700" fill="#243047">ops MCP</text>
+<text x="1263.00" y="567" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">stdio 하위 프로세스</text>
+<rect x="1592" y="520" width="320" height="90" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="1590" y="515" width="320" height="90" rx="16" fill="#FFFFFF" stroke="#9BC8AC" stroke-width="2"/>
+<rect x="1591" y="530" width="5" height="60" rx="2" fill="#9BC8AC" stroke="#9BC8AC" stroke-width="2"/>
+<text x="1613.00" y="530" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="27" font-weight="700" fill="#243047">docs MCP</text>
+<text x="1613.00" y="567" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">stdio 하위 프로세스</text>
+<text x="1420.00" y="680" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#278CA1">읽기·쓰기</text>
+<text x="1800.00" y="680" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#278CA1">읽기 전용</text>
+<rect x="1242" y="745" width="320" height="150" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="1240" y="740" width="320" height="150" rx="16" fill="#FFFFFF" stroke="#9BC6D0" stroke-width="2"/>
+<rect x="1241" y="755" width="5" height="120" rx="2" fill="#9BC6D0" stroke="#9BC6D0" stroke-width="2"/>
+<text x="1324.00" y="768" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="27" font-weight="700" fill="#243047">sessions 볼륨</text>
+<text x="1323.00" y="805" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">/state/sessions/</text>
+<text x="1349.00" y="838" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">session.db</text>
+<rect x="1632" y="745" width="320" height="150" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="1630" y="740" width="320" height="150" rx="16" fill="#FFFFFF" stroke="#9BC6D0" stroke-width="2"/>
+<rect x="1631" y="755" width="5" height="120" rx="2" fill="#9BC6D0" stroke="#9BC6D0" stroke-width="2"/>
+<text x="1678.00" y="769" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="26" font-weight="700" fill="#243047">runbook_index 볼륨</text>
+<text x="1727.00" y="805" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">/state/index/</text>
+<text x="1697.50" y="838" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">runbook_index.json</text>
+<rect x="2052" y="355" width="450" height="200" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="2050" y="350" width="450" height="200" rx="16" fill="#FFFFFF" stroke="#9BC8AC" stroke-width="2"/>
+<rect x="2051" y="365" width="5" height="170" rx="2" fill="#9BC8AC" stroke="#9BC8AC" stroke-width="2"/>
+<text x="2073.00" y="386" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="29" font-weight="700" fill="#243047">indexer · 일회성</text>
+<text x="2073.00" y="425" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">tools 프로필 · 명시 실행</text>
+<text x="2073.00" y="458" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">OpenAI 문서 임베딩 호출</text>
+<text x="2073.00" y="491" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">인덱스 생성·갱신 / 키 사용</text>
+<text x="2060.00" y="581" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#278CA1">인덱스 읽기·쓰기</text>
+<rect x="2052" y="745" width="450" height="150" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="2050" y="740" width="450" height="150" rx="16" fill="#FFFFFF" stroke="#83A7D4" stroke-width="2"/>
+<rect x="2051" y="755" width="5" height="120" rx="2" fill="#83A7D4" stroke="#83A7D4" stroke-width="2"/>
+<text x="2073.00" y="767" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="29" font-weight="700" fill="#243047">tests · 일회성</text>
+<text x="2073.00" y="806" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">별도 tests 이미지 / tools 프로필</text>
+<text x="2073.00" y="839" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">API 키·데이터 볼륨 없음</text>
+<rect x="2702" y="355" width="420" height="230" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="2700" y="350" width="420" height="230" rx="16" fill="#FFFFFF" stroke="#BBA6DA" stroke-width="2"/>
+<rect x="2701" y="365" width="5" height="200" rx="2" fill="#BBA6DA" stroke="#BBA6DA" stroke-width="2"/>
+<text x="2802.50" y="400" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="30" font-weight="700" fill="#243047">외부 OpenAI API</text>
+<text x="2846.00" y="440" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">Fast · Quality</text>
+<text x="2833.50" y="473" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">쿼리·문서 임베딩</text>
+<text x="2846.00" y="506" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">LLM 재순위화</text>
+<text x="2700.00" y="690" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#8B7AAE">indexer도 임베딩 API 호출</text>
+<text x="600.00" y="925" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="25" font-weight="400" fill="#617089">UID/GID 10001 · healthcheck · init · restart 정책 · 볼륨은 일반 down 후에도 보존</text>
+<text x="80.00" y="1060" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="29" font-weight="700" fill="#243047">기능 상세 · 아래 영역은 논리 구성입니다. API·그래프·MCP·저장 로직은 backend 안에서 실행됩니다.</text>
+<text x="80.00" y="1110" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="24" font-weight="400" fill="#617089">Vue 화면은 브라우저에서 실행 · 프록시는 frontend · OpenAI 모델은 외부 API · 저장 파일은 위 볼륨에 연결</text>
+<rect x="80" y="1200" width="780" height="850" rx="24" fill="#FFF5E9" stroke="#DCB985" stroke-width="2"/>
+<text x="108.00" y="1224" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="32" font-weight="700" fill="#243047">01  사용자 · API</text>
+<text x="108.00" y="1267" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">브라우저 → frontend → backend</text>
+<rect x="80" y="2110" width="780" height="1010" rx="24" fill="#EBF7FA" stroke="#9BC6D0" stroke-width="2"/>
+<text x="108.00" y="2134" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="32" font-weight="700" fill="#243047">04  세션 · 상태 유지</text>
+<text x="108.00" y="2177" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">동일 thread_id · 로컬 단일 서버 프로세스</text>
+<rect x="910" y="1200" width="1290" height="1920" rx="24" fill="#F0F4FE" stroke="#A1B3DE" stroke-width="2"/>
+<text x="938.00" y="1224" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="32" font-weight="700" fill="#243047">02  LangGraph Supervisor v2</text>
+<text x="938.00" y="1267" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">agent/graph.py · 실제 13개 노드와 조건 분기</text>
+<rect x="2250" y="1200" width="870" height="1230" rx="24" fill="#EFF9F3" stroke="#9BC8AC" stroke-width="2"/>
+<text x="2278.00" y="1224" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="32" font-weight="700" fill="#243047">03  MCP · 서비스별 RAG</text>
+<text x="2278.00" y="1267" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">관측 근거를 기준으로 검색하고 원문을 확보</text>
+<rect x="2250" y="2490" width="870" height="630" rx="24" fill="#F5F0FE" stroke="#BBA6DA" stroke-width="2"/>
+<text x="2278.00" y="2514" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="32" font-weight="700" fill="#243047">05  모델 · 실행 구성</text>
+<text x="2278.00" y="2557" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">현재 권장 실행: OpenAI / v2</text>
+<rect x="2320" y="1760" width="730" height="450" rx="18" fill="#E3F3E9" stroke="#8FBFA1" stroke-width="2"/>
+<polyline points="470,1385 470,1440" fill="none" stroke="#69788E" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="470.00,1440.00 463.75,1426.37 476.25,1426.37" fill="#69788E"/>
+<polyline points="470,1570 470,1620" fill="none" stroke="#69788E" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="470.00,1620.00 463.75,1606.37 476.25,1606.37" fill="#69788E"/>
+<polyline points="470,1740 470,1790" fill="none" stroke="#69788E" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="470.00,1790.00 463.75,1776.37 476.25,1776.37" fill="#69788E"/>
+<polyline points="790,1865 885,1865 885,1340 1000,1340" fill="none" stroke="#69788E" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="1000.00,1340.00 986.37,1346.25 986.37,1333.75" fill="#69788E"/>
+<polyline points="150,1875 110,1875 110,2275 150,2275" fill="none" stroke="#278CA1" stroke-width="3" stroke-linejoin="round" stroke-dasharray="8 7"/>
+<polygon points="150.00,2275.00 136.37,2281.25 136.37,2268.75" fill="#278CA1"/>
+<polyline points="1325,1385 1325,1435" fill="none" stroke="#69788E" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="1325.00,1435.00 1318.75,1421.37 1331.25,1421.37" fill="#69788E"/>
+<polyline points="1325,1520 1325,1575" fill="none" stroke="#69788E" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="1325.00,1575.00 1318.75,1561.37 1331.25,1561.37" fill="#69788E"/>
+<polyline points="1325,1670 1325,1725" fill="none" stroke="#69788E" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="1325.00,1725.00 1318.75,1711.37 1331.25,1711.37" fill="#69788E"/>
+<polyline points="1325,1810 1325,1860" fill="none" stroke="#69788E" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="1325.00,1860.00 1318.75,1846.37 1331.25,1846.37" fill="#69788E"/>
+<polyline points="1325,1945 1325,2000" fill="none" stroke="#69788E" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="1325.00,2000.00 1318.75,1986.37 1331.25,1986.37" fill="#69788E"/>
+<polyline points="1325,2105 1325,2160" fill="none" stroke="#69788E" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="1325.00,2160.00 1318.75,2146.37 1331.25,2146.37" fill="#69788E"/>
+<polyline points="1325,2265 1325,2330" fill="none" stroke="#69788E" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="1325.00,2330.00 1318.75,2316.37 1331.25,2316.37" fill="#69788E"/>
+<polyline points="1325,2415 1325,2470" fill="none" stroke="#69788E" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="1325.00,2470.00 1318.75,2456.37 1331.25,2456.37" fill="#69788E"/>
+<polyline points="1325,2570 1325,2630" fill="none" stroke="#69788E" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="1325.00,2630.00 1318.75,2616.37 1331.25,2616.37" fill="#69788E"/>
+<polyline points="1325,2735 1325,2800" fill="none" stroke="#69788E" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="1325.00,2800.00 1318.75,2786.37 1331.25,2786.37" fill="#69788E"/>
+<polyline points="1650,1477 1780,1477" fill="none" stroke="#BE8753" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="1780.00,1477.00 1766.37,1483.25 1766.37,1470.75" fill="#BE8753"/>
+<polyline points="1650,1622 1780,1622" fill="none" stroke="#BE8753" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="1780.00,1622.00 1766.37,1628.25 1766.37,1615.75" fill="#BE8753"/>
+<polyline points="2130,1477 2155,1477 2155,3007 2130,3007" fill="none" stroke="#BE8753" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="2130.00,3007.00 2143.63,3000.75 2143.63,3013.25" fill="#BE8753"/>
+<polyline points="2130,1622 2155,1622" fill="none" stroke="#BE8753" stroke-width="3" stroke-linejoin="round"/>
+<polyline points="1650,2850 1720,2850 1720,3007 1780,3007" fill="none" stroke="#69788E" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="1780.00,3007.00 1766.37,3013.25 1766.37,3000.75" fill="#69788E"/>
+<polyline points="1000,2212 955,2212 955,2052 1000,2052" fill="none" stroke="#C6873D" stroke-width="4" stroke-linejoin="round"/>
+<polygon points="1000.00,2052.00 986.37,2058.25 986.37,2045.75" fill="#C6873D"/>
+<polyline points="1000,2682 955,2682 955,2520 1000,2520" fill="none" stroke="#C6873D" stroke-width="4" stroke-linejoin="round"/>
+<polygon points="1000.00,2520.00 986.37,2526.25 986.37,2513.75" fill="#C6873D"/>
+<polyline points="1650,2235 2225,2235 2225,1345 2320,1345" fill="none" stroke="#8B7AAE" stroke-width="3" stroke-linejoin="round" stroke-dasharray="8 7"/>
+<polygon points="2320.00,1345.00 2306.37,1351.25 2306.37,1338.75" fill="#8B7AAE"/>
+<text x="1800.00" y="2199" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#8B7AAE">서비스별 검색 호출</text>
+<polyline points="1650,2520 2225,2520 2225,2757 2320,2757" fill="none" stroke="#8B7AAE" stroke-width="3" stroke-linejoin="round" stroke-dasharray="8 7"/>
+<polygon points="2320.00,2757.00 2306.37,2763.25 2306.37,2750.75" fill="#8B7AAE"/>
+<polyline points="1955,3050 1955,3147 885,3147 885,2485 790,2485" fill="none" stroke="#278CA1" stroke-width="4" stroke-linejoin="round"/>
+<polygon points="790.00,2485.00 803.63,2478.75 803.63,2491.25" fill="#278CA1"/>
+<text x="1040.00" y="3158" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#278CA1">서버: 메시지·상태·문맥 저장 성공 후 최종 응답 / 저장 실패 시 오류</text>
+<polyline points="790,2275 825,2275 825,2710 790,2710" fill="none" stroke="#278CA1" stroke-width="3" stroke-linejoin="round" stroke-dasharray="8 7"/>
+<polygon points="790.00,2710.00 803.63,2703.75 803.63,2716.25" fill="#278CA1"/>
+<polygon points="790.00,2275.00 803.63,2268.75 803.63,2281.25" fill="#278CA1"/>
+<polyline points="470,2560 470,2625" fill="none" stroke="#278CA1" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="470.00,2625.00 463.75,2611.37 476.25,2611.37" fill="#278CA1"/>
+<polyline points="470,2825 470,2890" fill="none" stroke="#278CA1" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="470.00,2890.00 463.75,2876.37 476.25,2876.37" fill="#278CA1"/>
+<polygon points="470.00,2825.00 476.25,2838.63 463.75,2838.63" fill="#278CA1"/>
+<polyline points="2685,1395 2685,1445" fill="none" stroke="#8B7AAE" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="2685.00,1445.00 2678.75,1431.37 2691.25,1431.37" fill="#8B7AAE"/>
+<polyline points="2500,1535 2500,1580" fill="none" stroke="#8B7AAE" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="2500.00,1580.00 2493.75,1566.37 2506.25,1566.37" fill="#8B7AAE"/>
+<polyline points="2875,1535 2875,1580" fill="none" stroke="#8B7AAE" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="2875.00,1580.00 2868.75,1566.37 2881.25,1566.37" fill="#8B7AAE"/>
+<polyline points="2320,1490 2290,1490 2290,1805 2320,1805" fill="none" stroke="#8B7AAE" stroke-width="3" stroke-linejoin="round" stroke-dasharray="8 7"/>
+<polygon points="2320.00,1805.00 2306.37,1811.25 2306.37,1798.75" fill="#8B7AAE"/>
+<polyline points="2685,1915 2685,1935" fill="none" stroke="#8B7AAE" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="2685.00,1935.00 2678.75,1921.37 2691.25,1921.37" fill="#8B7AAE"/>
+<polyline points="2685,2015 2685,2035" fill="none" stroke="#8B7AAE" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="2685.00,2035.00 2678.75,2021.37 2691.25,2021.37" fill="#8B7AAE"/>
+<polyline points="2685,2115 2685,2250" fill="none" stroke="#8B7AAE" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="2685.00,2250.00 2678.75,2236.37 2691.25,2236.37" fill="#8B7AAE"/>
+<polyline points="3000,1975 3080,1975 3080,2887 3050,2887" fill="none" stroke="#8B7AAE" stroke-width="3" stroke-linejoin="round" stroke-dasharray="8 7"/>
+<polygon points="3050.00,2887.00 3063.63,2880.75 3063.63,2893.25" fill="#8B7AAE"/>
+<polyline points="3000,2075 3100,2075 3100,2627 3050,2627" fill="none" stroke="#8B7AAE" stroke-width="3" stroke-linejoin="round" stroke-dasharray="8 7"/>
+<polygon points="3050.00,2627.00 3063.63,2620.75 3063.63,2633.25" fill="#8B7AAE"/>
+<rect x="222" y="1300" width="500" height="90" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="220" y="1295" width="500" height="90" rx="16" fill="#FFFFFF" stroke="#DCB985" stroke-width="2"/>
+<rect x="221" y="1310" width="5" height="60" rx="2" fill="#DCB985" stroke="#DCB985" stroke-width="2"/>
+<text x="428.00" y="1324" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="32" font-weight="700" fill="#243047">사용자</text>
+<rect x="152" y="1445" width="640" height="130" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="150" y="1440" width="640" height="130" rx="16" fill="#FFFFFF" stroke="#DCB985" stroke-width="2"/>
+<rect x="151" y="1455" width="5" height="100" rx="2" fill="#DCB985" stroke="#DCB985" stroke-width="2"/>
+<text x="173.00" y="1457" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="29" font-weight="700" fill="#243047">Vue 3 채팅 화면</text>
+<text x="173.00" y="1496" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">web_chat.html</text>
+<text x="173.00" y="1529" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">sessionStorage에 대화 ID 유지</text>
+<rect x="152" y="1625" width="640" height="120" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="150" y="1620" width="640" height="120" rx="16" fill="#FFFFFF" stroke="#DCB985" stroke-width="2"/>
+<rect x="151" y="1635" width="5" height="90" rx="2" fill="#DCB985" stroke="#DCB985" stroke-width="2"/>
+<text x="173.00" y="1649" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="29" font-weight="700" fill="#243047">frontend 프록시  :8600</text>
+<text x="173.00" y="1688" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">web_demo_server.py → backend:8100</text>
+<rect x="152" y="1795" width="640" height="160" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="150" y="1790" width="640" height="160" rx="16" fill="#FFFFFF" stroke="#DCB985" stroke-width="2"/>
+<rect x="151" y="1805" width="5" height="130" rx="2" fill="#DCB985" stroke="#DCB985" stroke-width="2"/>
+<text x="173.00" y="1822" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="29" font-weight="700" fill="#243047">FastAPI 백엔드  :8100</text>
+<text x="173.00" y="1861" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">server.py · POST /chat · GET /chat/stream</text>
+<text x="173.00" y="1894" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">GET /sessions/{thread_id} · /health</text>
+<text x="130.00" y="1987" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="25" font-weight="400" fill="#617089">SSE: 진행 이벤트 + 저장을 마친 최종 답변</text>
+<rect x="152" y="2210" width="640" height="140" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="150" y="2205" width="640" height="140" rx="16" fill="#FFFFFF" stroke="#9BC6D0" stroke-width="2"/>
+<rect x="151" y="2220" width="5" height="110" rx="2" fill="#9BC6D0" stroke="#9BC6D0" stroke-width="2"/>
+<text x="173.00" y="2227" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="29" font-weight="700" fill="#243047">요청 전: 이력 · 문맥 로드</text>
+<text x="173.00" y="2266" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">SqliteSessionStore.load / load_context</text>
+<text x="173.00" y="2299" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">동일 대화는 turn_lock으로 순차 처리</text>
+<rect x="152" y="2415" width="640" height="150" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="150" y="2410" width="640" height="150" rx="16" fill="#FFFFFF" stroke="#9BC6D0" stroke-width="2"/>
+<rect x="151" y="2425" width="5" height="120" rx="2" fill="#9BC6D0" stroke="#9BC6D0" stroke-width="2"/>
+<text x="173.00" y="2437" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="29" font-weight="700" fill="#243047">요청 후: 원자 저장</text>
+<text x="173.00" y="2476" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">save_turn · 하나의 트랜잭션</text>
+<text x="173.00" y="2509" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">메시지 쌍 + 처리 메타데이터 + 문맥</text>
+<rect x="152" y="2630" width="640" height="200" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="150" y="2625" width="640" height="200" rx="16" fill="#F8FEFF" stroke="#9BC6D0" stroke-width="2"/>
+<rect x="151" y="2640" width="5" height="170" rx="2" fill="#9BC6D0" stroke="#9BC6D0" stroke-width="2"/>
+<text x="323.50" y="2660" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="31" font-weight="700" fill="#243047">SQLite · sessions 볼륨</text>
+<text x="342.00" y="2701" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">/state/sessions/session.db</text>
+<text x="311.00" y="2734" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">messages · conversation_context</text>
+<text x="377.50" y="2767" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">message_metadata</text>
+<rect x="152" y="2895" width="640" height="135" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="150" y="2890" width="640" height="135" rx="16" fill="#FFFFFF" stroke="#9BC6D0" stroke-width="2"/>
+<rect x="151" y="2905" width="5" height="105" rx="2" fill="#9BC6D0" stroke="#9BC6D0" stroke-width="2"/>
+<text x="173.00" y="2910" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="29" font-weight="700" fill="#243047">대화 복원 · GET /sessions/{id}</text>
+<text x="173.00" y="2949" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">같은 탭 새로고침 / 동일 DB로 서버 재시작</text>
+<text x="173.00" y="2982" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">로컬 이력 조회 · 추가 생성 호출 없음</text>
+<text x="130.00" y="3050" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="25" font-weight="400" fill="#617089">새 대화: 새 ID로 분리 · 기존 메시지는 보존</text>
+<rect x="1002" y="1300" width="650" height="90" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="1000" y="1295" width="650" height="90" rx="16" fill="#FFFFFF" stroke="#92A8D5" stroke-width="2"/>
+<rect x="1001" y="1310" width="5" height="60" rx="2" fill="#92A8D5" stroke="#92A8D5" stroke-width="2"/>
+<text x="1023.00" y="1309" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="28" font-weight="700" fill="#243047">문맥 해석  ·  context</text>
+<text x="1023.00" y="1347" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">이전 대상 · 확인 대기 · 현재 명시 대상</text>
+<rect x="1002" y="1440" width="650" height="85" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="1000" y="1435" width="650" height="85" rx="16" fill="#FFFFFF" stroke="#92A8D5" stroke-width="2"/>
+<rect x="1001" y="1450" width="5" height="55" rx="2" fill="#92A8D5" stroke="#92A8D5" stroke-width="2"/>
+<text x="1023.00" y="1447" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="28" font-weight="700" fill="#243047">요청 분류  ·  route</text>
+<text x="1023.00" y="1485" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">일반 대화 / 장애 조사</text>
+<rect x="1002" y="1580" width="650" height="95" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="1000" y="1575" width="650" height="95" rx="16" fill="#FFFFFF" stroke="#92A8D5" stroke-width="2"/>
+<rect x="1001" y="1590" width="5" height="65" rx="2" fill="#92A8D5" stroke="#92A8D5" stroke-width="2"/>
+<text x="1023.00" y="1592" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="28" font-weight="700" fill="#243047">대상 확인  ·  resolve_targets</text>
+<text x="1023.00" y="1630" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">확정·미확인·제외 대상 / 임의 대체 없음</text>
+<rect x="1002" y="1730" width="650" height="85" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="1000" y="1725" width="650" height="85" rx="16" fill="#FFFFFF" stroke="#92A8D5" stroke-width="2"/>
+<rect x="1001" y="1740" width="5" height="55" rx="2" fill="#92A8D5" stroke="#92A8D5" stroke-width="2"/>
+<text x="1023.00" y="1737" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="28" font-weight="700" fill="#243047">계획 수립  ·  plan</text>
+<text x="1023.00" y="1775" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">확정 대상별 수집 작업 보정</text>
+<rect x="1002" y="1865" width="650" height="85" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="1000" y="1860" width="650" height="85" rx="16" fill="#FFFFFF" stroke="#92A8D5" stroke-width="2"/>
+<rect x="1001" y="1875" width="5" height="55" rx="2" fill="#92A8D5" stroke="#92A8D5" stroke-width="2"/>
+<text x="1023.00" y="1872" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="28" font-weight="700" fill="#243047">작업 게이트  ·  gate</text>
+<text x="1023.00" y="1910" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">불필요한 분석 작업 제거</text>
+<rect x="1002" y="2005" width="650" height="105" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="1000" y="2000" width="650" height="105" rx="16" fill="#FFFFFF" stroke="#92A8D5" stroke-width="2"/>
+<rect x="1001" y="2015" width="5" height="75" rx="2" fill="#92A8D5" stroke="#92A8D5" stroke-width="2"/>
+<text x="1023.00" y="2005" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="28" font-weight="700" fill="#243047">자료 수집  ·  research</text>
+<text x="1023.00" y="2043" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">서비스별 모니터링 / 선택 런북 원문</text>
+<text x="1023.00" y="2076" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">대상별 결과 격리 · 재시도</text>
+<rect x="1002" y="2165" width="650" height="105" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="1000" y="2160" width="650" height="105" rx="16" fill="#FFFFFF" stroke="#92A8D5" stroke-width="2"/>
+<rect x="1001" y="2175" width="5" height="75" rx="2" fill="#92A8D5" stroke="#92A8D5" stroke-width="2"/>
+<text x="1023.00" y="2165" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="28" font-weight="700" fill="#243047">충족 여부 확인  ·  replan_check</text>
+<text x="1023.00" y="2203" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">모니터링 누락 보완 → 서비스별 검색</text>
+<text x="1023.00" y="2236" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">선택 문서 수집 후 재확인</text>
+<rect x="1002" y="2335" width="650" height="85" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="1000" y="2330" width="650" height="85" rx="16" fill="#FFFFFF" stroke="#92A8D5" stroke-width="2"/>
+<rect x="1001" y="2345" width="5" height="55" rx="2" fill="#92A8D5" stroke="#92A8D5" stroke-width="2"/>
+<text x="1023.00" y="2342" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="28" font-weight="700" fill="#243047">선택적 분석  ·  analysis</text>
+<text x="1023.00" y="2380" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">분석 작업이 있을 때만 모델 실행</text>
+<rect x="1002" y="2475" width="650" height="100" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="1000" y="2470" width="650" height="100" rx="16" fill="#FFFFFF" stroke="#92A8D5" stroke-width="2"/>
+<rect x="1001" y="2485" width="5" height="70" rx="2" fill="#92A8D5" stroke="#92A8D5" stroke-width="2"/>
+<text x="1023.00" y="2473" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="28" font-weight="700" fill="#243047">주석 작성  ·  write</text>
+<text x="1023.00" y="2511" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">가설 · 추가 확인 · 문서 단계 선택</text>
+<text x="1023.00" y="2544" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">관측 사실·인용 원문은 코드에서 구성</text>
+<rect x="1002" y="2635" width="650" height="105" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="1000" y="2630" width="650" height="105" rx="16" fill="#FFFFFF" stroke="#92A8D5" stroke-width="2"/>
+<rect x="1001" y="2645" width="5" height="75" rx="2" fill="#92A8D5" stroke="#92A8D5" stroke-width="2"/>
+<text x="1023.00" y="2635" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="28" font-weight="700" fill="#243047">사실·인용 대조  ·  validate</text>
+<text x="1023.00" y="2673" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">대상·값·단위·출처·인용 원문 검증</text>
+<text x="1023.00" y="2706" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">미검증 장애 초안은 화면에 노출하지 않음</text>
+<rect x="1002" y="2805" width="650" height="100" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="1000" y="2800" width="650" height="100" rx="16" fill="#FFFFFF" stroke="#92A8D5" stroke-width="2"/>
+<rect x="1001" y="2815" width="5" height="70" rx="2" fill="#92A8D5" stroke="#92A8D5" stroke-width="2"/>
+<text x="1023.00" y="2803" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="28" font-weight="700" fill="#243047">최종 보고서  ·  finalize</text>
+<text x="1023.00" y="2841" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">완료 / 일부 완료 / 검증 실패</text>
+<text x="1023.00" y="2874" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">실패 시 확인 가능한 관측 사실만 제공</text>
+<rect x="1782" y="1440" width="350" height="85" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="1780" y="1435" width="350" height="85" rx="16" fill="#FFFFFF" stroke="#D8B98C" stroke-width="2"/>
+<rect x="1781" y="1450" width="5" height="55" rx="2" fill="#D8B98C" stroke="#D8B98C" stroke-width="2"/>
+<text x="1901.00" y="1446" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="29" font-weight="700" fill="#243047">일반 대화</text>
+<text x="1895.50" y="1485" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">chat_answer</text>
+<rect x="1782" y="1580" width="350" height="95" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="1780" y="1575" width="350" height="95" rx="16" fill="#FFFFFF" stroke="#D8B98C" stroke-width="2"/>
+<rect x="1781" y="1590" width="5" height="65" rx="2" fill="#D8B98C" stroke="#D8B98C" stroke-width="2"/>
+<text x="1859.50" y="1591" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="29" font-weight="700" fill="#243047">서비스 확인 질문</text>
+<text x="1893.00" y="1630" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">clarify_target</text>
+<rect x="1782" y="2970" width="350" height="85" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="1780" y="2965" width="350" height="85" rx="16" fill="#FFFFFF" stroke="#91B4BF" stroke-width="2"/>
+<rect x="1781" y="2980" width="5" height="55" rx="2" fill="#91B4BF" stroke="#91B4BF" stroke-width="2"/>
+<text x="1888.50" y="2976" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="29" font-weight="700" fill="#243047">그래프 종료</text>
+<text x="1876.50" y="3015" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">END → 서버 반환</text>
+<text x="1682.50" y="1441" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="21" font-weight="400" fill="#BE8753">chat</text>
+<text x="1676.50" y="1580" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="20" font-weight="400" fill="#BE8753">확정 0개</text>
+<rect x="1770" y="1800" width="360" height="335" rx="16" fill="#F7F9FF" stroke="#C3CEE6" stroke-width="2"/>
+<text x="1790.00" y="1824" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="27" font-weight="700" fill="#243047">수집·검색 정책</text>
+<text x="1790.00" y="1873" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">누락 대상만 1회 보완</text>
+<text x="1790.00" y="1916" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">서비스별 검색은 1회</text>
+<text x="1790.00" y="1959" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">선택 문서는 research로 수집</text>
+<text x="1790.00" y="2002" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">정상·무알림은 검색 생략</text>
+<text x="1790.00" y="2045" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">검색 실패는 서비스별 격리</text>
+<rect x="1770" y="2620" width="360" height="200" rx="16" fill="#FBF4EA" stroke="#DDC09B" stroke-width="2"/>
+<text x="1790.00" y="2645" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="27" font-weight="700" fill="#243047">반려 시 재작성</text>
+<text x="1790.00" y="2694" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">작성은 최대 3회</text>
+<text x="1790.00" y="2729" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">3회 실패해도 검증 통과 아님</text>
+<text x="1790.00" y="2764" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">관측 사실만 제한 응답</text>
+<text x="1790.00" y="2860" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">chat · 확인 질문은</text>
+<text x="1790.00" y="2894" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">finalize를 거치지 않음</text>
+<rect x="2322" y="1300" width="730" height="100" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="2320" y="1295" width="730" height="100" rx="16" fill="#FFFFFF" stroke="#9BC8AC" stroke-width="2"/>
+<rect x="2321" y="1310" width="5" height="70" rx="2" fill="#9BC8AC" stroke="#9BC8AC" stroke-width="2"/>
+<text x="2343.00" y="1314" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="29" font-weight="700" fill="#243047">MCP Client · stdio</text>
+<text x="2343.00" y="1353" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">agent/mcp_client.py · ops / docs 세션 탐색</text>
+<rect x="2322" y="1450" width="730" height="90" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="2320" y="1445" width="730" height="90" rx="16" fill="#FFFFFF" stroke="#9BC8AC" stroke-width="2"/>
+<rect x="2321" y="1460" width="5" height="60" rx="2" fill="#9BC8AC" stroke="#9BC8AC" stroke-width="2"/>
+<text x="2343.00" y="1459" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="29" font-weight="700" fill="#243047">Ops MCP Server</text>
+<text x="2343.00" y="1498" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">mcp_server.py · Tool / Resource / Prompt</text>
+<rect x="2322" y="1585" width="350" height="130" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="2320" y="1580" width="350" height="130" rx="16" fill="#FFFFFF" stroke="#9BC8AC" stroke-width="2"/>
+<rect x="2321" y="1595" width="5" height="100" rx="2" fill="#9BC8AC" stroke="#9BC8AC" stroke-width="2"/>
+<text x="2343.00" y="1599" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="26" font-weight="700" fill="#243047">모니터링 Tool</text>
+<text x="2343.00" y="1635" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">get_monitoring_status</text>
+<text x="2343.00" y="1668" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">data/monitoring.json</text>
+<rect x="2702" y="1585" width="350" height="130" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="2700" y="1580" width="350" height="130" rx="16" fill="#FFFFFF" stroke="#9BC8AC" stroke-width="2"/>
+<rect x="2701" y="1595" width="5" height="100" rx="2" fill="#9BC8AC" stroke="#9BC8AC" stroke-width="2"/>
+<text x="2723.00" y="1599" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="26" font-weight="700" fill="#243047">진단 Prompt</text>
+<text x="2723.00" y="1635" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">incident_analysis_prompt</text>
+<text x="2723.00" y="1668" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">계획 수립에 표준 절차 제공</text>
+<text x="2342.00" y="1780" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="28" font-weight="700" fill="#243047">런북 검색 Tool · search_runbooks</text>
+<rect x="2372" y="1840" width="630" height="80" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="2370" y="1835" width="630" height="80" rx="16" fill="#FFFFFF" stroke="#92BBA0" stroke-width="2"/>
+<rect x="2371" y="1850" width="5" height="50" rx="2" fill="#92BBA0" stroke="#92BBA0" stroke-width="2"/>
+<text x="2393.00" y="1845" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="26" font-weight="700" fill="#243047">서비스별 관측 검색어</text>
+<text x="2393.00" y="1881" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">알림 원문 우선 · 모델 원인 추정 미사용</text>
+<rect x="2372" y="1940" width="630" height="80" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="2370" y="1935" width="630" height="80" rx="16" fill="#FFFFFF" stroke="#92BBA0" stroke-width="2"/>
+<rect x="2371" y="1950" width="5" height="50" rx="2" fill="#92BBA0" stroke="#92BBA0" stroke-width="2"/>
+<text x="2393.00" y="1945" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="26" font-weight="700" fill="#243047">임베딩 검색 · cosine top 2</text>
+<text x="2393.00" y="1981" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">runbook_index 볼륨 · JSON 읽기 전용</text>
+<rect x="2372" y="2040" width="630" height="80" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="2370" y="2035" width="630" height="80" rx="16" fill="#FFFFFF" stroke="#92BBA0" stroke-width="2"/>
+<rect x="2371" y="2050" width="5" height="50" rx="2" fill="#92BBA0" stroke="#92BBA0" stroke-width="2"/>
+<text x="2393.00" y="2045" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="26" font-weight="700" fill="#243047">LLM 재순위화 · 최대 2개 선택</text>
+<text x="2393.00" y="2081" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">runbook_rerank.py · 무관하면 빈 선택</text>
+<text x="2350.00" y="2150" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">문서 임베딩 · indexer로 명시 생성/갱신</text>
+<rect x="2322" y="2255" width="730" height="100" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="2320" y="2250" width="730" height="100" rx="16" fill="#FFFFFF" stroke="#9BC8AC" stroke-width="2"/>
+<rect x="2321" y="2265" width="5" height="70" rx="2" fill="#9BC8AC" stroke="#9BC8AC" stroke-width="2"/>
+<text x="2343.00" y="2269" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="28" font-weight="700" fill="#243047">런북 Resource · 선택 문서 원문</text>
+<text x="2343.00" y="2307" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">runbook://incident-response/{incident_type} · data/runbooks/</text>
+<text x="2320.00" y="2378" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="22" font-weight="400" fill="#617089">Docs MCP: 연결·탐색 대상이며 운영 조사에서는 미사용</text>
+<rect x="2322" y="2585" width="730" height="95" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="2320" y="2580" width="730" height="95" rx="16" fill="#FFFFFF" stroke="#BBA6DA" stroke-width="2"/>
+<rect x="2321" y="2595" width="5" height="65" rx="2" fill="#BBA6DA" stroke="#BBA6DA" stroke-width="2"/>
+<text x="2343.00" y="2596" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="29" font-weight="700" fill="#243047">OpenAI Fast · gpt-4o-mini</text>
+<text x="2343.00" y="2635" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">분류 · 계획 · 선택적 분석 · 일반 대화 · 재순위화</text>
+<rect x="2322" y="2715" width="730" height="95" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="2320" y="2710" width="730" height="95" rx="16" fill="#FFFFFF" stroke="#BBA6DA" stroke-width="2"/>
+<rect x="2321" y="2725" width="5" height="65" rx="2" fill="#BBA6DA" stroke="#BBA6DA" stroke-width="2"/>
+<text x="2343.00" y="2726" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="29" font-weight="700" fill="#243047">OpenAI Quality · gpt-4o</text>
+<text x="2343.00" y="2765" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">가설·추가 확인·문서 단계 주석 작성</text>
+<rect x="2322" y="2845" width="730" height="95" rx="16" fill="#E1E6EF" stroke="#E1E6EF" stroke-width="2"/>
+<rect x="2320" y="2840" width="730" height="95" rx="16" fill="#FFFFFF" stroke="#BBA6DA" stroke-width="2"/>
+<rect x="2321" y="2855" width="5" height="65" rx="2" fill="#BBA6DA" stroke="#BBA6DA" stroke-width="2"/>
+<text x="2343.00" y="2857" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="28" font-weight="700" fill="#243047">Embedding · text-embedding-3-small</text>
+<text x="2343.00" y="2895" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">1,536차원 · 문서 인덱스와 질문 검색</text>
+<text x="2320.00" y="2985" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">SupervisorDeps가 Fast / Quality / MCP / Store를 주입</text>
+<text x="2320.00" y="3024" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">fake · Ollama 어댑터 / v1은 호환 경로로 유지</text>
+<text x="2320.00" y="3063" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="23" font-weight="400" fill="#617089">권장 실행은 외부 추적 비활성화</text>
+<rect x="80" y="3220" width="3040" height="130" rx="18" fill="#FFFFFF" stroke="#DCE3EF" stroke-width="2"/>
+<polyline points="110,3260 185,3260" fill="none" stroke="#69788E" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="185.00,3260.00 171.37,3266.25 171.37,3253.75" fill="#69788E"/>
+<text x="205.00" y="3243" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="25" font-weight="400" fill="#617089">실선: 요청·그래프 처리</text>
+<polyline points="680,3260 755,3260" fill="none" stroke="#8B7AAE" stroke-width="3" stroke-linejoin="round" stroke-dasharray="8 7"/>
+<polygon points="755.00,3260.00 741.37,3266.25 741.37,3253.75" fill="#8B7AAE"/>
+<text x="775.00" y="3243" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="25" font-weight="400" fill="#617089">점선: 도구·모델 호출</text>
+<polyline points="1260,3260 1335,3260" fill="none" stroke="#278CA1" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="1335.00,3260.00 1321.37,3266.25 1321.37,3253.75" fill="#278CA1"/>
+<text x="1355.00" y="3243" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="25" font-weight="400" fill="#617089">청록: 저장·복원</text>
+<polyline points="1770,3260 1845,3260" fill="none" stroke="#C6873D" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="1845.00,3260.00 1831.37,3266.25 1831.37,3253.75" fill="#C6873D"/>
+<text x="1865.00" y="3243" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="25" font-weight="400" fill="#617089">황토: 재수집·재작성</text>
+<text x="110.00" y="3301" dominant-baseline="text-before-edge" font-family="Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif" font-size="24" font-weight="400" fill="#617089">관측 사실·문서 인용 대조는 원인 확정·조치 실행을 뜻하지 않습니다.  |  샘플 모니터링 · 로컬 SQLite · 인증/다중 서버 운영 범위 제외</text>
+</svg>
